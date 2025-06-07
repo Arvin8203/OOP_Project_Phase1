@@ -1,0 +1,69 @@
+– File Menu –
+1) show existing schematics
+2) load schematic from file
+3) new schematic
+4) exit
+Enter choice:
+New schematic. Enter filename to create:
+Loading schematic: fullTest.txt
+Enter commands (type .end to finish):
+> 
+Circuit elements:
+  GND1: Ground at node 0
+  V1: Vsrc 1-0 = 15 V
+  I1: Isrc 2->0 = 0.005 A
+  R1: Resistor 1-2, 1000 Ohm
+  R2: Resistor 2-3, 2000 Ohm
+  C1: Capacitor 2-0, 1e-006 F
+  C2: Capacitor 3-0, 2e-006 F
+  L1: Inductor 3-0, 0.001 H
+  L2: Inductor 1-3, 0.002 H
+  D1: Diode 2->3, Is=1e-014, n=1, Vt=0.02585 V
+  D2: Diode 3->1, Is=1e-014, n=1, Vt=0.02585 V
+  R3: Resistor 3-4, 3000 Ohm
+  I2: Isrc 4->0 = 0.002 A
+  V2: Vsrc 4-1 = 5 V
+> 
+Warning: Newton iteration singular matrix
+DC Operating Point:
+Node 0: 0 V
+Node 1: 0 V
+Node 2: 0 V
+Node 3: 0 V
+Node 4: 0 V
+> 
+Warning: Newton iteration singular matrix
+Time	V(1)	V(2)	V(3)	V(4)
+0	0	0	0	0
+0.001	0	0	0	0
+0.002	0	0	0	0
+0.003	0	0	0	0
+0.004	0	0	0	0
+0.005	0	0	0	0
+> 
+Circuit elements:
+  GND1: Ground at node 0
+  V1: Vsrc 1-0 = 15 V
+  R1: Resistor 1-2, 1000 Ohm
+  C1: Capacitor 2-0, 1e-006 F
+  L2: Inductor 1-3, 0.002 H
+  D1: Diode 2->3, Is=1e-014, n=1, Vt=0.02585 V
+  R3: Resistor 3-4, 3000 Ohm
+  I2: Isrc 4->0 = 0.002 A
+> 
+Warning: Newton iteration singular matrix
+DC Operating Point:
+Node 0: 0 V
+Node 1: 0 V
+Node 2: 0 V
+Node 3: 0 V
+Node 4: 0 V
+> 
+Warning: Newton iteration singular matrix
+Time	V(1)	V(2)	V(3)	V(4)
+0	0	0	0	0
+0.002	0	0	0	0
+0.004	0	0	0	0
+0.006	0	0	0	0
+> 
+Exiting.
