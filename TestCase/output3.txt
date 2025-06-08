@@ -1,0 +1,19 @@
+– File Menu –
+1) show existing schematics
+2) load schematic from file
+3) new schematic
+4) exit
+Enter choice:
+New schematic. Enter filename to create:
+Loading schematic: sweep
+Enter commands (type .end to finish):
+> 
+V1	V(1)	I(R1)
+0	0	0
+1	0.001	0.001
+2	0.002	0.002
+3	0.003	0.003
+4	0.004	0.004
+5	0.005	0.005
+> 
+Exiting.

@@ -1,0 +1,10 @@
+3
+deltest
+add V1 1 0 10
+add R1 1 2 100
+add C1 2 0 0.001
+list
+delete R1
+delete D1
+list
+.end

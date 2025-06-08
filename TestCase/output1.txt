@@ -1,0 +1,21 @@
+– File Menu –
+1) show existing schematics
+2) load schematic from file
+3) new schematic
+4) exit
+Enter choice:
+New schematic. Enter filename to create:
+Loading schematic: test1
+Enter commands (type .end to finish):
+> 
+Circuit elements:
+  V1: Vsrc 1-0 = 10 V
+  R1: Resistor 1-2, 1000 Ohm
+  R2: Resistor 2-0, 2000 Ohm
+> 
+DC Operating Point:
+Node 0: 0 V
+Node 1: 10 V
+Node 2: 3.33333 V
+> 
+Exiting.

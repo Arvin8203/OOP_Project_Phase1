@@ -1,0 +1,7 @@
+3
+rcsim
+add V1 1 0 5
+add R1 1 2 1000
+add C1 2 0 1u
+.print TRAN 1u 5u V(2)
+.end

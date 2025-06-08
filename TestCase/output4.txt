@@ -1,0 +1,21 @@
+– File Menu –
+1) show existing schematics
+2) load schematic from file
+3) new schematic
+4) exit
+Enter choice:
+New schematic. Enter filename to create:
+Loading schematic: diode
+Enter commands (type .end to finish):
+> 
+Circuit elements:
+  V1: Vsrc 1-0 = 5 V
+  R1: Resistor 1-2, 1000 Ohm
+  D1: Diode 2->0, Is=1e-014, n=1, Vt=0.02585 V
+> 
+DC Operating Point:
+Node 0: 0 V
+Node 1: 5 V
+Node 2: 0.69524 V
+> 
+Exiting.

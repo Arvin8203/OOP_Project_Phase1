@@ -1,0 +1,6 @@
+3
+sweep
+add V1 1 0 0
+add R1 1 0 1000
+.print DC V1 0 5 1 V(1) I(R1)
+.end

@@ -1,0 +1,8 @@
+3
+test1
+add V1 1 0 10
+add R1 1 2 1000
+add R2 2 0 2000
+list
+solve dc
+.end

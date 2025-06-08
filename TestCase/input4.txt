@@ -1,0 +1,7 @@
+3
+diode
+add V1 1 0 5
+add R1 1 2 1000
+add D1 2 0
+solve dc
+.end

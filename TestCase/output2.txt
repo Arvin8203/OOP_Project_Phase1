@@ -1,0 +1,19 @@
+– File Menu –
+1) show existing schematics
+2) load schematic from file
+3) new schematic
+4) exit
+Enter choice:
+New schematic. Enter filename to create:
+Loading schematic: rcsim
+Enter commands (type .end to finish):
+> 
+Time	V(2)
+0	0
+0.000001	0.004995
+0.000002	0.009980
+0.000003	0.014940
+0.000004	0.019880
+0.000005	0.024800
+> 
+Exiting.
