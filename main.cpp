@@ -162,7 +162,7 @@ public:
                 }
             }
             if (maxVal < 1e-14) {
-                return false;  // singular
+                return false;
             }
             // swap if needed
             if (pivot != k) {
@@ -450,9 +450,14 @@ public:
                 }
 
                 case GROUND: {
-                    // Fix node voltage to zero: V(node1) = 0
+                    // Fix node voltage to zero: clear row & column, then clamp V=0
                     if (i1 >= 0) {
-                        A[i1][i1] += 1.0;
+                        // zero the entire row and col first
+                        for (int k = 0; k < dim; ++k) {
+                            A[i1][k] = 0.0;
+                            A[k][i1] = 0.0;
+                        }
+                        A[i1][i1] = 1.0;
                         b[i1] = 0.0;
                     }
                     break;
@@ -734,9 +739,13 @@ public:
                         break;
                     }
                     case GROUND: {
-                        // fix node voltage to zero
-                        if (i1>=0) {
-                            A[i1][i1] += 1.0;
+                        // fix node voltage to zero: clear row & column
+                        if (i1 >= 0) {
+                            for (int k = 0; k < dim; ++k) {
+                                A[i1][k] = 0.0;
+                                A[k][i1] = 0.0;
+                            }
+                            A[i1][i1] = 1.0;
                             b[i1] = 0.0;
                         }
                         break;
