@@ -25,12 +25,14 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <filesystem>
 #include <map>
 #include <cmath>
 #include <limits>
 #include <algorithm>
 
 using namespace std;
+namespace std::filesystem;
 
 //-----------------------------------------------------------------------------
 //   Global: where to read commands and write output
@@ -1130,6 +1132,7 @@ double convertValue(const string& valStr) {
 //   main(): read “menu” from input, build circuit, respond to commands, write to output.
 //-----------------------------------------------------------------------------
 int main() {
+    // 1) Open input and output files
     ifstream fin(inputPath);
     ofstream fout(outputPath);
     if (!fin.is_open()) {
@@ -1141,7 +1144,14 @@ int main() {
         return 1;
     }
 
-    // 1) Print file menu
+    // 2) Build a dynamic list of all .txt schematics in the current directory
+    vector<string> availableFiles;
+    for (auto& p : fs::directory_iterator(".")) {
+        if (p.path().extension() == ".txt")
+            availableFiles.push_back(p.path().filename().string());
+    }
+
+    // 3) Print the file menu to output
     fout << "– File Menu –\n";
     fout << "1) show existing schematics\n";
     fout << "2) load schematic from file\n";
@@ -1149,68 +1159,94 @@ int main() {
     fout << "4) exit\n";
     fout << "Enter choice:\n";
 
+    // 4) Read and validate the user's menu choice
     int choice = 0;
     fin >> choice;
-    if (!fin.good()) {
+    if (!fin.good() || choice < 1 || choice > 4) {
         fout << "Error: Inappropriate input\n";
         return 0;
     }
 
-    vector<string> available = { "draft1", "draft2", "draft3", "elecphase1" };
     string filename;
+    bool useOriginalStream = false;
 
     if (choice == 1) {
+        // Option 1: Show existing schematics
         fout << "- choose existing schematic:\n";
-        for (int i = 0; i < (int)available.size(); ++i) {
-            fout << (i+1) << ") " << available[i] << "\n";
+        for (int i = 0; i < (int)availableFiles.size(); ++i) {
+            fout << (i + 1) << ") " << availableFiles[i] << "\n";
         }
         fout << "Enter number:\n";
         int sel = 0;
         fin >> sel;
-        if (sel < 1 || sel > (int)available.size()) {
+        if (!fin.good() || sel < 1 || sel > (int)availableFiles.size()) {
             fout << "Error: Inappropriate input\n";
             return 0;
         }
-        filename = available[sel - 1] + ".txt";
+        filename = availableFiles[sel - 1];
     }
     else if (choice == 2) {
+        // Option 2: Load schematic from file
         fout << "Enter netlist filename:\n";
         fin >> filename;
+        if (!fin.good()) {
+            fout << "Error: Inappropriate input\n";
+            return 0;
+        }
     }
     else if (choice == 3) {
+        // Option 3: Create new schematic
         fout << "New schematic. Enter filename to create:\n";
         fin >> filename;
-        ofstream ofs(filename.c_str());
-        // just create empty file
+        if (!fin.good()) {
+            fout << "Error: Inappropriate input\n";
+            return 0;
+        }
+        // create the file and register it
+        ofstream ofs(filename);
         ofs.close();
+        availableFiles.push_back(filename);
+        useOriginalStream = true;
     }
     else {
-        // exit
+        // Option 4: exit
         return 0;
     }
 
     fout << "Loading schematic: " << filename << "\n";
-
-    Circuit circuit;
-
-    // skip rest of line
-    fin.ignore(numeric_limits<streamsize>::max(), '\n');
     fout << "Enter commands (type .end to finish):\n";
 
-    while (true) {
-        fout << "> \n";
-        string raw;
-        if (!getline(fin, raw)) break;
-        string line = trim(raw);
-        if (line.empty()) {
-            continue;
+    Circuit circuit;
+    ifstream fin2;
+    if (!useOriginalStream) {
+        fin2.open(filename);
+        if (!fin2.is_open()) {
+            fout << "Error: File not found\n";
+            return 0;
         }
-        if (line == ".end") {
-            break;
-        }
+    }
 
-        // tokenize and dispatch
-        auto tok = tokenize(line);
+    auto& inputStream = useOriginalStream ? fin : fin2;
+    if (!useOriginalStream)
+        fin2.ignore(numeric_limits<streamsize>::max(), '\n');
+    else
+        fin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+    string raw, line;
+    while (true) {
+        if (!getline(inputStream, raw)) break;
+        // trim whitespace
+        size_t start = raw.find_first_not_of(" \t\r\n");
+        if (start == string::npos) continue;
+        size_t end = raw.find_last_not_of(" \t\r\n");
+        line = raw.substr(start, end - start + 1);
+
+        if (line == ".end") break;
+
+        istringstream iss(line);
+        vector<string> tok;
+        string w;
+        while (iss >> w) tok.push_back(w);
         if (tok.empty()) continue;
 
         if (tok[0] == "add") {
@@ -1218,121 +1254,101 @@ int main() {
                 if (tok.size() < 3) throw SyntaxException();
                 string name = tok[1];
                 char ctype = name[0];
-
-                // Ground (Gname n1)
+                // Ground
                 if (ctype == 'G' && tok.size() == 3) {
                     int n1 = parseNode(tok[2]);
                     circuit.addGround(name, n1);
                 }
-                    // VCVS: Ename n1 n2 cn1 cn2 gain
-                else if (ctype == 'E') {
-                    if (tok.size() != 7) throw SyntaxException();
-                    int    n1   = parseNode(tok[2]);
-                    int    n2   = parseNode(tok[3]);
-                    int    cn1  = parseNode(tok[4]);
-                    int    cn2  = parseNode(tok[5]);
+                    // VCVS
+                else if (ctype == 'E' && tok.size() == 7) {
+                    int n1 = parseNode(tok[2]), n2 = parseNode(tok[3]);
+                    int cn1 = parseNode(tok[4]), cn2 = parseNode(tok[5]);
                     double gain = convertValue(tok[6]);
                     circuit.addVCVS(name, n1, n2, cn1, cn2, gain);
                 }
-                    // VCCS: Gname n1 n2 cn1 cn2 gain
+                    // VCCS
                 else if (ctype == 'G' && tok.size() == 7) {
-                    int    n1   = parseNode(tok[2]);
-                    int    n2   = parseNode(tok[3]);
-                    int    cn1  = parseNode(tok[4]);
-                    int    cn2  = parseNode(tok[5]);
+                    int n1 = parseNode(tok[2]), n2 = parseNode(tok[3]);
+                    int cn1 = parseNode(tok[4]), cn2 = parseNode(tok[5]);
                     double gain = convertValue(tok[6]);
                     circuit.addVCCS(name, n1, n2, cn1, cn2, gain);
                 }
-                    // CCVS: Hname n1 n2 vSourceName gain
-                else if (ctype == 'H') {
-                    if (tok.size() != 6) throw SyntaxException();
-                    int    n1   = parseNode(tok[2]);
-                    int    n2   = parseNode(tok[3]);
+                    // CCVS
+                else if (ctype == 'H' && tok.size() == 6) {
+                    int n1 = parseNode(tok[2]), n2 = parseNode(tok[3]);
                     string vsrc = tok[4];
                     double gain = convertValue(tok[5]);
                     circuit.addCCVS(name, n1, n2, vsrc, gain);
                 }
-                    // CCCS: Fname n1 n2 vSourceName gain
-                else if (ctype == 'F') {
-                    if (tok.size() != 6) throw SyntaxException();
-                    int    n1   = parseNode(tok[2]);
-                    int    n2   = parseNode(tok[3]);
+                    // CCCS
+                else if (ctype == 'F' && tok.size() == 6) {
+                    int n1 = parseNode(tok[2]), n2 = parseNode(tok[3]);
                     string vsrc = tok[4];
                     double gain = convertValue(tok[5]);
                     circuit.addCCCS(name, n1, n2, vsrc, gain);
                 }
                     // R, C, L, V, I
-                else if (ctype=='R' || ctype=='C' || ctype=='L' || ctype=='V' || ctype=='I') {
-                    if (tok.size() != 5) throw SyntaxException();
-                    int    n1  = parseNode(tok[2]);
-                    int    n2  = parseNode(tok[3]);
-                    double v  = convertValue(tok[4]);
-                    if      (ctype=='R') circuit.addResistor(name, n1, n2, v);
-                    else if (ctype=='C') circuit.addCapacitor(name, n1, n2, v);
-                    else if (ctype=='L') circuit.addInductor(name, n1, n2, v);
-                    else if (ctype=='V') circuit.addVoltageSource(name, n1, n2, v);
-                    else                  circuit.addCurrentSource(name, n1, n2, v);
+                else if ((ctype=='R'||ctype=='C'||ctype=='L'||ctype=='V'||ctype=='I') && tok.size()==5) {
+                    int n1 = parseNode(tok[2]), n2 = parseNode(tok[3]);
+                    double v = convertValue(tok[4]);
+                    if      (ctype=='R') circuit.addResistor(name,n1,n2,v);
+                    else if (ctype=='C') circuit.addCapacitor(name,n1,n2,v);
+                    else if (ctype=='L') circuit.addInductor(name,n1,n2,v);
+                    else if (ctype=='V') circuit.addVoltageSource(name,n1,n2,v);
+                    else                  circuit.addCurrentSource(name,n1,n2,v);
                 }
                     // Diode
-                else if (ctype=='D') {
-                    string model = "D";
-                    if      (tok.size() == 5) model = tok[4];
-                    else if (tok.size() > 5)  throw SyntaxException();
-                    if (model != "D" && model != "Z") throw ModelException();
-                    double Is, ncoef, Vt;
-                    if (model == "D") { Is = 1e-14; ncoef = 1.0;   Vt = 0.02585; }
-                    else              { Is = 1e-12; ncoef = 1.2;   Vt = 0.02585; }
-                    int n1 = parseNode(tok[2]);
-                    int n2 = parseNode(tok[3]);
-                    circuit.addDiode(name, n1, n2, Is, ncoef, Vt);
+                else if (ctype=='D' && (tok.size()==4||tok.size()==5)) {
+                    string model = (tok.size()==5 ? tok[4] : "D");
+                    if (model!="D"&&model!="Z") throw ModelException();
+                    double Is = (model=="D" ? 1e-14 : 1e-12);
+                    double ncoef = (model=="D" ? 1.0 : 1.2);
+                    double Vt = 0.02585;
+                    int n1 = parseNode(tok[2]), n2 = parseNode(tok[3]);
+                    circuit.addDiode(name,n1,n2,Is,ncoef,Vt);
                 }
                 else {
                     throw NameException();
                 }
             }
+            catch (const SyntaxException&) {
+                fout << "Error: Inappropriate input\n";
+            }
+            catch (const NameException&) {
+                fout << "Error: Inappropriate input\n";
+            }
             catch (const exception& e) {
-                fout << e.what() << endl;
+                fout << e.what() << "\n";
             }
         }
         else if (tok[0] == "delete") {
             try {
-                if (tok.size() != 2) {
-                    throw SyntaxException();
-                }
-                string name = tok[1];
-                circuit.deleteElement(name);
+                if (tok.size() != 2) throw SyntaxException();
+                circuit.deleteElement(tok[1]);
             } catch (const exception& e) {
-                fout << e.what() << endl;
+                fout << e.what() << "\n";
             }
         }
-
         else if (tok[0] == "list") {
             circuit.listElements(fout);
         }
-        else if (tok[0] == "solve" && tok.size() == 2 && tok[1] == "dc") {
+        else if (tok[0] == "solve" && tok.size()==2 && tok[1]=="dc") {
             vector<double> dcVolt;
-            if (circuit.solveDC(dcVolt, fout)) {
+            if (circuit.solveDC(dcVolt,fout)) {
                 fout << "DC Operating Point:\n";
-                // Print all nodes from 0..maxNode
-                int maxNode = (int)dcVolt.size() - 1;
-                for (int n = 0; n <= maxNode; ++n) {
+                for (int n = 0; n < (int)dcVolt.size(); ++n)
                     fout << "Node " << n << ": " << dcVolt[n] << " V\n";
-                }
             }
         }
-        else if (tok[0] == "tran" && tok.size() == 4) {
-            double tstep=0.0, tstart=0.0, tstop=0.0;
+        else if (tok[0] == "tran" && tok.size()==4) {
             try {
-                tstep  = stod(tok[1]);
-                tstart = stod(tok[2]);
-                tstop  = stod(tok[3]);
-            }
-            catch (...) {
+                double tstep = stod(tok[1]),
+                        tstart= stod(tok[2]),
+                        tstop = stod(tok[3]);
+                circuit.simulateTransient(tstop,tstep,BACKWARD_EULER,fout);
+            } catch (...) {
                 fout << "Error: Syntax error in tran command\n";
-                continue;
             }
-            // We ignore tstart; we always begin at t=0
-            circuit.simulateTransient(tstop, tstep, BACKWARD_EULER, fout);
         }
         else {
             fout << "Error: Syntax error\n";
@@ -1340,7 +1356,5 @@ int main() {
     }
 
     fout << "Exiting.\n";
-    fin.close();
-    fout.close();
     return 0;
 }
