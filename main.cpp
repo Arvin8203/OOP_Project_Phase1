@@ -568,6 +568,48 @@ public:
             int idx = kv.second;   // 0..N−1
             nodeVoltages[actualNode] = x[idx];
         }
+        // --- begin NEW: DC power summary (§4.1 P = V*I) ---
+        out << "Element power summary (P = V·I):\n";
+        for (auto e : elements) {
+            double P = 0.0, I = 0.0;
+            int i1 = (e->node1 == 0 ? -1 : nodeIndex[e->node1]);
+            int i2 = (e->node2 == 0 ? -1 : nodeIndex[e->node2]);
+            double Va = (i1 >= 0 ? x[i1] : 0.0);
+            double Vb = (i2 >= 0 ? x[i2] : 0.0);
+            double Vd = Va - Vb;
+
+            switch (e->type) {
+                case RESISTOR: {
+                    auto r = static_cast<Resistor*>(e);
+                    I = Vd / r->resistance;
+                    break;
+                }
+                case DIODE: {
+                    auto d = static_cast<Diode*>(e);
+                    double expo = exp(Vd / (d->emissionCoeff * d->thermalVoltage));
+                    I = d->saturationCurrent * (expo - 1.0);
+                    break;
+                }
+                case VSOURCE: {
+                    // branch current is in x[N + branchIndex[e]]
+                    int bi = branchIndex[e];
+                    I = x[N + bi];
+                    break;
+                }
+                case ISOURCE: {
+                    auto iSrc = static_cast<CurrentSource*>(e);
+                    I = iSrc->current;
+                    break;
+                }
+                default:
+                    continue;  // skip GROUND, CAPACITOR, INDUCTOR
+            }
+
+            P = Vd * I;
+            out << "  " << e->name
+                << ": V=" << Vd << " V, I=" << I << " A, P=" << P << " W\n";
+        }
+        // --- end NEW ---
         return true;
     }
 
@@ -853,53 +895,58 @@ int main() {
     }
 
     // 1) Print file menu
-    fout << "– File Menu –\n";
-    fout << "1) show existing schematics\n";
-    fout << "2) load schematic from file\n";
-    fout << "3) new schematic\n";
-    fout << "4) exit\n";
-    fout << "Enter choice:\n";
+//    fout << "– File Menu –\n";
+//    fout << "1) show existing schematics\n";
+//    fout << "2) load schematic from file\n";
+//    fout << "3) new schematic\n";
+//    fout << "4) exit\n";
+//    fout << "Enter choice:\n";
 
-    int choice = 0;
-    fin >> choice;
-    if (!fin.good()) {
-        fout << "Error: Inappropriate input\n";
-        return 0;
-    }
+//    int choice = 0;
+//    fin >> choice;
+//    if (!fin.good()) {
+//        fout << "Error: Inappropriate input\n";
+//        return 0;
+//    }
+//
+//    vector<string> available = { "draft1", "draft2", "draft3", "elecphase1" };
+//    string filename;
+//
+//    if (choice == 1) {
+//        fout << "- choose existing schematic:\n";
+//        for (int i = 0; i < (int)available.size(); ++i) {
+//            fout << (i+1) << ") " << available[i] << "\n";
+//        }
+//        fout << "Enter number:\n";
+//        int sel = 0;
+//        fin >> sel;
+//        if (sel < 1 || sel > (int)available.size()) {
+//            fout << "Error: Inappropriate input\n";
+//            return 0;
+//        }
+//        filename = available[sel - 1] + ".txt";
+//    }
+//    else if (choice == 2) {
+//        fout << "Enter netlist filename:\n";
+//        fin >> filename;
+//    }
+//    else if (choice == 3) {
+//        fout << "New schematic. Enter filename to create:\n";
+//        fin >> filename;
+//        ofstream ofs(filename.c_str());
+//        // just create empty file
+//        ofs.close();
+//    }
+//    else {
+//        // exit
+//        return 0;
+//    }
+//
+//    fout << "Loading schematic: " << filename << "\n";
 
-    vector<string> available = { "draft1", "draft2", "draft3", "elecphase1" };
+    // Immediately load the netlist filename (no menu)
     string filename;
-
-    if (choice == 1) {
-        fout << "- choose existing schematic:\n";
-        for (int i = 0; i < (int)available.size(); ++i) {
-            fout << (i+1) << ") " << available[i] << "\n";
-        }
-        fout << "Enter number:\n";
-        int sel = 0;
-        fin >> sel;
-        if (sel < 1 || sel > (int)available.size()) {
-            fout << "Error: Inappropriate input\n";
-            return 0;
-        }
-        filename = available[sel - 1] + ".txt";
-    }
-    else if (choice == 2) {
-        fout << "Enter netlist filename:\n";
-        fin >> filename;
-    }
-    else if (choice == 3) {
-        fout << "New schematic. Enter filename to create:\n";
-        fin >> filename;
-        ofstream ofs(filename.c_str());
-        // just create empty file
-        ofs.close();
-    }
-    else {
-        // exit
-        return 0;
-    }
-
+    fin >> filename;
     fout << "Loading schematic: " << filename << "\n";
 
     Circuit circuit;
@@ -986,10 +1033,13 @@ int main() {
             circuit.listElements(fout);
         }
         else if (tok[0] == "solve" && tok.size() == 2 && tok[1] == "dc") {
+            // 1) List all elements per spec:
+            circuit.listElements(fout);
+
+            // 2) Do the DC solve:
             vector<double> dcVolt;
             if (circuit.solveDC(dcVolt, fout)) {
                 fout << "DC Operating Point:\n";
-                // Print all nodes from 0..maxNode
                 int maxNode = (int)dcVolt.size() - 1;
                 for (int n = 0; n <= maxNode; ++n) {
                     fout << "Node " << n << ": " << dcVolt[n] << " V\n";
