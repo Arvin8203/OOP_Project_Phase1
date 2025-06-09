@@ -34,8 +34,8 @@ using namespace std;
 //-----------------------------------------------------------------------------
 //   Global: where to read commands and write output
 //-----------------------------------------------------------------------------
-static const string inputPath  = "D:\\EE @ SUT\\8th term\\OOP\\Project\\Part1\\InputFile.txt";
-static const string outputPath = "D:\\EE @ SUT\\8th term\\OOP\\Project\\Part1\\OutputFile.txt";
+static const string inputPath  = "E:\\CLion\\Project_phase1\\input01.txt";
+static const string outputPath = "E:\\CLion\\Project_phase1\\output01.txt";
 
 //-----------------------------------------------------------------------------
 //   Enumeration of element types & integration methods
@@ -44,8 +44,71 @@ enum ElementType { RESISTOR, CAPACITOR, INDUCTOR, DIODE, VSOURCE, ISOURCE, GROUN
 enum IntegrationMethod { BACKWARD_EULER, TRAPEZOIDAL };
 
 //-----------------------------------------------------------------------------
-//   Base class for all circuit elements
+//   Base class for exception handling all circuit elements
 //-----------------------------------------------------------------------------
+class NameException : public exception {
+public:
+    const char* what() const noexcept override {
+        return "Error: Element not found in library";
+    }
+};
+
+class ValueException : public exception {
+private:
+    string elementType;
+public:
+    ValueException(const string& type) : elementType(type) {}
+    const char* what() const noexcept override {
+        if (elementType == "resistor") {
+            return "Error: Resistance cannot be zero or negative";
+        } else if (elementType == "capacitor") {
+            return "Error: Capacitance cannot be zero or negative";
+        } else if (elementType == "inductor") {
+            return "Error: Inductance cannot be zero or negative";
+        }
+        return "Error: Invalid value";
+    }
+};
+
+class SyntaxException : public exception {
+public:
+    const char* what() const noexcept override {
+        return "Error: Syntax error";
+    }
+};
+
+class ModelException : public exception {
+public:
+    const char* what() const noexcept override {
+        return "Error: Model not found in library";
+    }
+};
+
+class DuplicateException : public exception {
+private:
+    string elementType;
+    string name;
+public:
+    DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
+    const char* what() const noexcept override {
+        static string msg;
+        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+        return msg.c_str();
+    }
+};
+
+class NotFoundException : public exception {
+private:
+    string elementType;
+public:
+    NotFoundException(const string& type) : elementType(type) {}
+    const char* what() const noexcept override {
+        static string msg;
+        msg = "Error: Cannot delete " + elementType + "; component not found";
+        return msg.c_str();
+    }
+};
+
 class CircuitElement {
 public:
     string       name;
@@ -223,37 +286,73 @@ public:
     }
 
     // Add various element types; each call ensures both endpoints (even if ground) get their index.
-    void addResistor(const string& name, int n1, int n2, double val) {
+    void addResistor(const string& name, int n1, int n2, double r) {
+        if (hasElement(name)) {
+            throw DuplicateException("resistor", name);
+        }
+        if (r <= 0) {
+            throw ValueException("resistor");
+        }
         getNodeIndex(n1);
         getNodeIndex(n2);
-        elements.push_back(new Resistor(name, n1, n2, val));
+        elements.push_back(new Resistor(name, n1, n2, r));
     }
-    void addCapacitor(const string& name, int n1, int n2, double val) {
+
+    void addCapacitor(const string& name, int n1, int n2, double c) {
+        if (hasElement(name)) {
+            throw DuplicateException("capacitor", name);
+        }
+        if (c <= 0) {
+            throw ValueException("capacitor");
+        }
         getNodeIndex(n1);
         getNodeIndex(n2);
-        elements.push_back(new Capacitor(name, n1, n2, val));
+        elements.push_back(new Capacitor(name, n1, n2, c));
     }
-    void addInductor(const string& name, int n1, int n2, double val) {
+
+    void addInductor(const string& name, int n1, int n2, double L) {
+        if (hasElement(name)) {
+            throw DuplicateException("inductor", name);
+        }
+        if (L <= 0) {
+            throw ValueException("inductor");
+        }
         getNodeIndex(n1);
         getNodeIndex(n2);
-        elements.push_back(new Inductor(name, n1, n2, val));
+        elements.push_back(new Inductor(name, n1, n2, L));
     }
-    void addDiode(const string& name, int a, int c) {
+
+    void addDiode(const string& name, int a, int c, double Is = 1e-14, double ncoef = 1.0, double Vt = 0.02585) {
+        if (hasElement(name)) {
+            throw DuplicateException("diode", name);
+        }
         getNodeIndex(a);
         getNodeIndex(c);
-        elements.push_back(new Diode(name, a, c));
+        elements.push_back(new Diode(name, a, c, Is, ncoef, Vt));
     }
-    void addVoltageSource(const string& name, int p, int q, double val) {
+
+    void addVoltageSource(const string& name, int p, int q, double v) {
+        if (hasElement(name)) {
+            throw DuplicateException("voltage source", name);
+        }
         getNodeIndex(p);
         getNodeIndex(q);
-        elements.push_back(new VoltageSource(name, p, q, val));
+        elements.push_back(new VoltageSource(name, p, q, v));
     }
-    void addCurrentSource(const string& name, int p, int q, double val) {
+
+    void addCurrentSource(const string& name, int p, int q, double i) {
+        if (hasElement(name)) {
+            throw DuplicateException("current source", name);
+        }
         getNodeIndex(p);
         getNodeIndex(q);
-        elements.push_back(new CurrentSource(name, p, q, val));
+        elements.push_back(new CurrentSource(name, p, q, i));
     }
+
     void addGround(const string& name, int nd) {
+        if (hasElement(name)) {
+            throw DuplicateException("ground", name);
+        }
         getNodeIndex(nd);
         elements.push_back(new Ground(name, nd));
     }
@@ -273,6 +372,23 @@ public:
                 return true;
             }
         }
+        string typeStr;
+        switch (nm[0]) {
+            case 'R': typeStr = "resistor"; break;
+            case 'C': typeStr = "capacitor"; break;
+            case 'L': typeStr = "inductor"; break;
+            case 'D': typeStr = "diode"; break;
+            case 'V': typeStr = "voltage source"; break;
+            case 'I': typeStr = "current source"; break;
+            case 'G': typeStr = "ground"; break;
+            default: typeStr = "component"; break;
+        }
+        throw NotFoundException(typeStr);
+    }
+
+    bool hasElement(const string& nm) const {
+        for (auto e : elements)
+            if (e->name == nm) return true;
         return false;
     }
 
@@ -568,48 +684,6 @@ public:
             int idx = kv.second;   // 0..N−1
             nodeVoltages[actualNode] = x[idx];
         }
-        // --- begin NEW: DC power summary (§4.1 P = V*I) ---
-        out << "Element power summary (P = V·I):\n";
-        for (auto e : elements) {
-            double P = 0.0, I = 0.0;
-            int i1 = (e->node1 == 0 ? -1 : nodeIndex[e->node1]);
-            int i2 = (e->node2 == 0 ? -1 : nodeIndex[e->node2]);
-            double Va = (i1 >= 0 ? x[i1] : 0.0);
-            double Vb = (i2 >= 0 ? x[i2] : 0.0);
-            double Vd = Va - Vb;
-
-            switch (e->type) {
-                case RESISTOR: {
-                    auto r = static_cast<Resistor*>(e);
-                    I = Vd / r->resistance;
-                    break;
-                }
-                case DIODE: {
-                    auto d = static_cast<Diode*>(e);
-                    double expo = exp(Vd / (d->emissionCoeff * d->thermalVoltage));
-                    I = d->saturationCurrent * (expo - 1.0);
-                    break;
-                }
-                case VSOURCE: {
-                    // branch current is in x[N + branchIndex[e]]
-                    int bi = branchIndex[e];
-                    I = x[N + bi];
-                    break;
-                }
-                case ISOURCE: {
-                    auto iSrc = static_cast<CurrentSource*>(e);
-                    I = iSrc->current;
-                    break;
-                }
-                default:
-                    continue;  // skip GROUND, CAPACITOR, INDUCTOR
-            }
-
-            P = Vd * I;
-            out << "  " << e->name
-                << ": V=" << Vd << " V, I=" << I << " A, P=" << P << " W\n";
-        }
-        // --- end NEW ---
         return true;
     }
 
@@ -879,6 +953,59 @@ static inline vector<string> tokenize(const string& line) {
     return tok;
 }
 
+int parseNode(const string& nodeStr) {
+    if (nodeStr == "GND") return 0;
+    string numStr;
+    for (char c : nodeStr) {
+        if (isdigit(c)) numStr += c;
+    }
+
+    if (numStr.empty()) return 0; // Default to ground if no digits found
+    try {
+        return stoi(numStr);
+    } catch (...) {
+        return 0;
+    }
+}
+
+double convertValue(const string& valStr) {
+    if (valStr.empty()) return 0.0;
+    char last = valStr.back();
+    double multiplier = 1.0;
+    string numPart = valStr;
+
+    if (!isdigit(last)) {
+        numPart = valStr.substr(0, valStr.size()-1);
+        switch (tolower(last)) {
+            case 't': multiplier = 1e12; break;
+            case 'g': multiplier = 1e9; break;
+            case 'k': multiplier = 1e3; break;
+            case 'm':
+                // Check for "MEG" separately
+                if (valStr.size() >= 3 && valStr.substr(valStr.size()-3) == "MEG") {
+                    multiplier = 1e6;
+                    numPart = valStr.substr(0, valStr.size()-3);
+                } else {
+                    multiplier = 1e6; // Default to mega
+                }
+                break;
+            case 'h': multiplier = 1e2; break;
+            case 'd': multiplier = 1e-1; break;
+            case 'c': multiplier = 1e-2; break;
+            case 'u': multiplier = 1e-6; break;
+            case 'n': multiplier = 1e-9; break;
+            case 'p': multiplier = 1e-12; break;
+            case 'f': multiplier = 1e-15; break;
+            default: multiplier = 1.0; // Unknown suffix
+        }
+    }
+
+    try {
+        return stod(numPart) * multiplier;
+    } catch (...) {
+        throw SyntaxException();
+    }
+}
 //-----------------------------------------------------------------------------
 //   main(): read “menu” from input, build circuit, respond to commands, write to output.
 //-----------------------------------------------------------------------------
@@ -895,58 +1022,53 @@ int main() {
     }
 
     // 1) Print file menu
-//    fout << "– File Menu –\n";
-//    fout << "1) show existing schematics\n";
-//    fout << "2) load schematic from file\n";
-//    fout << "3) new schematic\n";
-//    fout << "4) exit\n";
-//    fout << "Enter choice:\n";
+    fout << "– File Menu –\n";
+    fout << "1) show existing schematics\n";
+    fout << "2) load schematic from file\n";
+    fout << "3) new schematic\n";
+    fout << "4) exit\n";
+    fout << "Enter choice:\n";
 
-//    int choice = 0;
-//    fin >> choice;
-//    if (!fin.good()) {
-//        fout << "Error: Inappropriate input\n";
-//        return 0;
-//    }
-//
-//    vector<string> available = { "draft1", "draft2", "draft3", "elecphase1" };
-//    string filename;
-//
-//    if (choice == 1) {
-//        fout << "- choose existing schematic:\n";
-//        for (int i = 0; i < (int)available.size(); ++i) {
-//            fout << (i+1) << ") " << available[i] << "\n";
-//        }
-//        fout << "Enter number:\n";
-//        int sel = 0;
-//        fin >> sel;
-//        if (sel < 1 || sel > (int)available.size()) {
-//            fout << "Error: Inappropriate input\n";
-//            return 0;
-//        }
-//        filename = available[sel - 1] + ".txt";
-//    }
-//    else if (choice == 2) {
-//        fout << "Enter netlist filename:\n";
-//        fin >> filename;
-//    }
-//    else if (choice == 3) {
-//        fout << "New schematic. Enter filename to create:\n";
-//        fin >> filename;
-//        ofstream ofs(filename.c_str());
-//        // just create empty file
-//        ofs.close();
-//    }
-//    else {
-//        // exit
-//        return 0;
-//    }
-//
-//    fout << "Loading schematic: " << filename << "\n";
+    int choice = 0;
+    fin >> choice;
+    if (!fin.good()) {
+        fout << "Error: Inappropriate input\n";
+        return 0;
+    }
 
-    // Immediately load the netlist filename (no menu)
+    vector<string> available = { "draft1", "draft2", "draft3", "elecphase1" };
     string filename;
-    fin >> filename;
+
+    if (choice == 1) {
+        fout << "- choose existing schematic:\n";
+        for (int i = 0; i < (int)available.size(); ++i) {
+            fout << (i+1) << ") " << available[i] << "\n";
+        }
+        fout << "Enter number:\n";
+        int sel = 0;
+        fin >> sel;
+        if (sel < 1 || sel > (int)available.size()) {
+            fout << "Error: Inappropriate input\n";
+            return 0;
+        }
+        filename = available[sel - 1] + ".txt";
+    }
+    else if (choice == 2) {
+        fout << "Enter netlist filename:\n";
+        fin >> filename;
+    }
+    else if (choice == 3) {
+        fout << "New schematic. Enter filename to create:\n";
+        fin >> filename;
+        ofstream ofs(filename.c_str());
+        // just create empty file
+        ofs.close();
+    }
+    else {
+        // exit
+        return 0;
+    }
+
     fout << "Loading schematic: " << filename << "\n";
 
     Circuit circuit;
@@ -972,74 +1094,88 @@ int main() {
         if (tok.empty()) continue;
 
         if (tok[0] == "add") {
-            // expect at least: add <name> <n1> <n2> [value]
-            if (tok.size() < 3) {
-                fout << "Error: Syntax error\n";
-                continue;
-            }
-            string name = tok[1];
-            char ctype = name[0];
-            int n1=0, n2=0;
-            double val=0.0;
             try {
-                n1 = stoi(tok[2]);
-                if (tok.size() >= 4) n2 = stoi(tok[3]);
-                if (tok.size() >= 5) val = stod(tok[4]);
-            }
-            catch (...) {
-                fout << "Error: Syntax error\n";
-                continue;
-            }
-
-            switch (ctype) {
-                case 'R':
-                    circuit.addResistor(name, n1, n2, val);
-                    break;
-                case 'C':
-                    circuit.addCapacitor(name, n1, n2, val);
-                    break;
-                case 'L':
-                    circuit.addInductor(name, n1, n2, val);
-                    break;
-                case 'D':
-                    circuit.addDiode(name, n1, n2);
-                    break;
-                case 'V':
-                    circuit.addVoltageSource(name, n1, n2, val);
-                    break;
-                case 'I':
-                    circuit.addCurrentSource(name, n1, n2, val);
-                    break;
-                case 'G':
-                    // ground calls: “add GND1 5”  (only specify the node to tie to 0)
+                if (tok.size() < 3) {
+                    throw SyntaxException();
+                }
+                string name = tok[1];
+                char ctype = name[0];
+                if (ctype == 'G') {
+                    if (tok.size() != 3) throw SyntaxException();
+                    int n1 = parseNode(tok[2]);
                     circuit.addGround(name, n1);
-                    break;
-                default:
-                    fout << "Error: Unknown component type\n";
-                    break;
+                } else {
+                    if (tok.size() < 4) throw SyntaxException();
+
+                    int n1 = parseNode(tok[2]);
+                    int n2 = parseNode(tok[3]);
+
+                    if (ctype == 'R' || ctype == 'C' || ctype == 'L' || ctype == 'V' || ctype == 'I') {
+                        if (tok.size() != 5) throw SyntaxException();
+
+                        // REMOVED INNER TRY-CATCH BLOCK STARTS HERE
+                        double val = convertValue(tok[4]);
+                        if (ctype == 'R') {
+                            circuit.addResistor(name, n1, n2, val);
+                        } else if (ctype == 'C') {
+                            circuit.addCapacitor(name, n1, n2, val);
+                        } else if (ctype == 'L') {
+                            circuit.addInductor(name, n1, n2, val);
+                        } else if (ctype == 'V') {
+                            circuit.addVoltageSource(name, n1, n2, val);
+                        } else if (ctype == 'I') {
+                            circuit.addCurrentSource(name, n1, n2, val);
+                        }
+                        // REMOVED INNER TRY-CATCH BLOCK ENDS HERE
+                    } else if (ctype == 'D') {
+                        string model = "D";
+                        if (tok.size() == 5) {
+                            model = tok[4];
+                        } else if (tok.size() > 5) {
+                            throw SyntaxException();
+                        }
+                        if (model != "D" && model != "Z") {
+                            throw ModelException();
+                        }
+                        double Is, ncoef, Vt;
+                        if (model == "D") {
+                            Is = 1e-14;
+                            ncoef = 1.0;
+                            Vt = 0.02585;
+                        } else {
+                            Is = 1e-12;
+                            ncoef = 1.2;
+                            Vt = 0.02585;
+                        }
+                        circuit.addDiode(name, n1, n2, Is, ncoef, Vt);
+                    } else {
+                        throw NameException();
+                    }
+                }
+            } catch (const exception& e) {
+                fout << e.what() << endl;
             }
         }
         else if (tok[0] == "delete") {
-            if (tok.size() != 2) {
-                fout << "Error: Syntax error\n";
-                continue;
-            }
-            string name = tok[1];
-            if (!circuit.deleteElement(name)) {
-                fout << "Error: Component " << name << " not found in circuit\n";
+            try {
+                if (tok.size() != 2) {
+                    throw SyntaxException();
+                }
+                string name = tok[1];
+                circuit.deleteElement(name);
+            } catch (const exception& e) {
+                fout << e.what() << endl;
             }
         }
+
         else if (tok[0] == "list") {
             circuit.listElements(fout);
         }
         else if (tok[0] == "solve" && tok.size() == 2 && tok[1] == "dc") {
-            // 1) List all elements per spec:
-            circuit.listElements(fout);
-
-            // 2) Do the DC solve:
             vector<double> dcVolt;
             if (circuit.solveDC(dcVolt, fout)) {
                 fout << "DC Operating Point:\n";
+                // Print all nodes from 0..maxNode
                 int maxNode = (int)dcVolt.size() - 1;
                 for (int n = 0; n <= maxNode; ++n) {
                     fout << "Node " << n << ": " << dcVolt[n] << " V\n";
