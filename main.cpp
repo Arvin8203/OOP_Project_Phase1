@@ -25,14 +25,13 @@
 #include <sstream>
 #include <vector>
 #include <string>
-#include <filesystem>
+#include <dirent.h>
 #include <map>
 #include <cmath>
 #include <limits>
 #include <algorithm>
 
 using namespace std;
-namespace std::filesystem;
 
 //-----------------------------------------------------------------------------
 //   Global: where to read commands and write output
@@ -1146,9 +1145,17 @@ int main() {
 
     // 2) Build a dynamic list of all .txt schematics in the current directory
     vector<string> availableFiles;
-    for (auto& p : fs::directory_iterator(".")) {
-        if (p.path().extension() == ".txt")
-            availableFiles.push_back(p.path().filename().string());
+    DIR* dir = opendir(".");
+    if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            string fname = entry->d_name;
+            if (fname.size() >= 4 &&
+                fname.substr(fname.size() - 4) == ".txt") {
+                availableFiles.push_back(fname);
+            }
+        }
+        closedir(dir);
     }
 
     // 3) Print the file menu to output
