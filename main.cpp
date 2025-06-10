@@ -1112,140 +1112,65 @@ int parseNode(const string& nodeStr) {
     }
 }
 
-double convertValue(const string& valStr) {
-    if (valStr.empty()) return 0.0;
-    char last = valStr.back();
+double convertValue(const std::string& valStr) {
+    if (valStr.empty())
+        return 0.0;
+
+    char suffix = valStr.back();
     double multiplier = 1.0;
     string numPart = valStr;
 
-    if (!isdigit(last)) {
-        numPart = valStr.substr(0, valStr.size()-1);
-        switch (tolower(last)) {
-            case 't': multiplier = 1e12; break;
-            case 'g': multiplier = 1e9;  break;
-            case 'k': multiplier = 1e3;  break;
-            case 'm':
-                if (valStr.size() >= 3 && valStr.substr(valStr.size()-3) == "MEG") {
-                    multiplier = 1e6;
-                    numPart = valStr.substr(0, valStr.size()-3);
-                } else {
-                    multiplier = 1e6;
-                }
+    if (isalpha(suffix)) {
+        numPart = valStr.substr(0, valStr.size() - 1);
+
+        switch (suffix) {
+            case 'T':
+                multiplier = 1e12;
                 break;
-            case 'h': multiplier = 1e2;  break;
-            case 'd': multiplier = 1e-1; break;
-            case 'c': multiplier = 1e-2; break;
-            case 'u': multiplier = 1e-6; break;
-            case 'n': multiplier = 1e-9; break;
-            case 'p': multiplier = 1e-12;break;
-            case 'f': multiplier = 1e-15;break;
-            default:  multiplier = 1.0;  break;
+            case 'G':
+                multiplier = 1e9;
+                break;
+            case 'M':
+                multiplier = 1e6;
+                break;
+            case 'k':
+                multiplier = 1e3;
+                break;
+            case 'm':
+                multiplier = 1e-3;
+                break;
+            case 'u':
+                multiplier = 1e-6;
+                break;
+            case 'n':
+                multiplier = 1e-9;
+                break;
+            case 'p':
+                multiplier = 1e-12;
+                break;
+            case 'f':
+                multiplier = 1e-15;
+                break;
+            default:
+                multiplier = 1.0;
+                break;
         }
     }
 
     try {
-        // 1) compute numeric value
-        double value = stod(numPart) * multiplier;
-        // 2) check for non‐positive
+        double value = std::stod(numPart) * multiplier;
         if (value <= 0.0) {
             throw ValueException("Error: Component value must be positive");
         }
-        // 3) return if OK
         return value;
     }
     catch (const ValueException&) {
-        // pass through our positive‐value error
         throw;
     }
     catch (...) {
-        // any other parse error
         throw SyntaxException();
     }
 }
-
-//void Circuit::saveToFile(const string& filename) {
-//    ofstream file(schematicsDir + filename);
-//    for (auto e : elements) {
-//        switch (e->type) {
-//            case RESISTOR: {
-//                auto r = static_cast<Resistor*>(e);
-//                out << "  " << r->name << ": Resistor "
-//                    << r->node1 << "-" << r->node2
-//                    << ", " << r->resistance << " Ohm\n";
-//                break;
-//            }
-//            case CAPACITOR: {
-//                auto c = static_cast<Capacitor*>(e);
-//                out << "  " << c->name << ": Capacitor "
-//                    << c->node1 << "-" << c->node2
-//                    << ", " << c->capacitance << " F\n";
-//                break;
-//            }
-//            case INDUCTOR: {
-//                auto l = static_cast<Inductor*>(e);
-//                out << "  " << l->name << ": Inductor "
-//                    << l->node1 << "-" << l->node2
-//                    << ", " << l->inductance << " H\n";
-//                break;
-//            }
-//            case DIODE: {
-//                auto d = static_cast<Diode*>(e);
-//                out << "  " << d->name << ": Diode "
-//                    << d->node1 << "->" << d->node2
-//                    << ", Is=" << d->saturationCurrent
-//                    << ", n=" << d->emissionCoeff
-//                    << ", Vt=" << d->thermalVoltage << " V\n";
-//                break;
-//            }
-//            case VSOURCE: {
-//                auto v = static_cast<VoltageSource*>(e);
-//                out << "  " << v->name << ": Vsrc "
-//                    << v->node1 << "-" << v->node2
-//                    << " = " << v->voltage << " V\n";
-//                break;
-//            }
-//            case ISOURCE: {
-//                auto i = static_cast<CurrentSource*>(e);
-//                out << "  " << i->name << ": Isrc "
-//                    << i->node1 << "->" << i->node2
-//                    << " = " << i->current << " A\n";
-//                break;
-//            }
-//            case GROUND: {
-//                auto g = static_cast<Ground*>(e);
-//                out << "  " << g->name << ": Ground at node "
-//                    << g->node1 << "\n";
-//                break;
-//            }
-//                // VCVS (E)
-//            case DEP_VCVS: {
-//                auto d = static_cast<VCVS*>(e);
-//                out << "  " << d->name << ": VCVS " << d->node1 << "-" << d->node2 << ", ctrl nodes " << d->ctrlNode1 << "-" << d->ctrlNode2 << ", gain=" << d->gain << "\n";
-//                break;
-//            }
-//                // VCCS (G)
-//            case DEP_VCCS: {
-//                auto d = static_cast<VCCS*>(e);
-//                out << "  " << d->name << ": VCCS " << d->node1 << "-" << d->node2 << ", ctrl nodes " << d->ctrlNode1 << "-" << d->ctrlNode2 << ", gain=" << d->gain << "\n";
-//                break;
-//            }
-//                // CCVS (H)
-//            case DEP_CCVS: {
-//                auto d = static_cast<CCVS*>(e);
-//                out << "  " << d->name << ": CCVS " << d->node1 << "-" << d->node2 << ", controlling source " << d->vName << ", gain=" << d->gain << "\n";
-//                break;
-//            }
-//                // CCCS (F)
-//            case DEP_CCCS: {
-//                auto d = static_cast<CCCS*>(e);
-//                out << "  " << d->name << ": CCCS " << d->node1 << "-" << d->node2 << ", controlling source " << d->vName << ", gain=" << d->gain << "\n";
-//                break;
-//            }
-//        }
-//    }
-//    file << ".end\n";
-//    file.close();
-//}
 
 //-----------------------------------------------------------------------------
 //   main(): read “menu” from input, build circuit, respond to commands, write to output.
@@ -1420,7 +1345,6 @@ int main() {
                 if (c=='G' && tok.size()==3) {
                     int n1=parseNode(tok[2]);
                     circuit.addGround(name,n1);
-//                    circuit.saveToFile(schematicsDir + filename);
                 }
                     // VCVS
                 else if (c=='E' && tok.size()==7) {
@@ -1428,7 +1352,6 @@ int main() {
                     int cn1=parseNode(tok[4]),cn2=parseNode(tok[5]);
                     double g=convertValue(tok[6]);
                     circuit.addVCVS(name,n1,n2,cn1,cn2,g);
-//                    circuit.saveToFile(schematicsDir + filename);
                 }
                     // VCCS
                 else if (c=='G' && tok.size()==7) {
@@ -1436,21 +1359,18 @@ int main() {
                     int cn1=parseNode(tok[4]),cn2=parseNode(tok[5]);
                     double g=convertValue(tok[6]);
                     circuit.addVCCS(name,n1,n2,cn1,cn2,g);
-//                    circuit.saveToFile(schematicsDir + filename);
                 }
                     // CCVS
                 else if (c=='H' && tok.size()==6) {
                     int n1=parseNode(tok[2]),n2=parseNode(tok[3]);
                     string vs=tok[4]; double g=convertValue(tok[5]);
                     circuit.addCCVS(name,n1,n2,vs,g);
-//                    circuit.saveToFile(schematicsDir + filename);
                 }
                     // CCCS
                 else if (c=='F' && tok.size()==6) {
                     int n1=parseNode(tok[2]),n2=parseNode(tok[3]);
                     string vs=tok[4]; double g=convertValue(tok[5]);
                     circuit.addCCCS(name,n1,n2,vs,g);
-//                    circuit.saveToFile(schematicsDir + filename);
                 }
                     // R,C,L,V,I
                 else if ((c=='R'||c=='C'||c=='L'||c=='V'||c=='I') && tok.size()==5) {
@@ -1458,34 +1378,30 @@ int main() {
                     double v=convertValue(tok[4]);
                     if (c=='R') {
                         circuit.addResistor(name,n1,n2,v);
-//                        circuit.saveToFile(schematicsDir + filename);
                     }
                     else if (c=='C') {
                         circuit.addCapacitor(name,n1,n2,v);
-//                        circuit.saveToFile(schematicsDir + filename);
                     }
                     else if (c=='L') {
                         circuit.addInductor(name,n1,n2,v);
-//                        circuit.saveToFile(schematicsDir + filename);
                     }
                     else if (c=='V') {
                         circuit.addVoltageSource(name,n1,n2,v);
-//                        circuit.saveToFile(schematicsDir + filename);
                     }
                     else {circuit.addCurrentSource(name,n1,n2,v);
-//                        circuit.saveToFile(schematicsDir + filename);
                     }
                 }
                     // Diode
                 else if (c=='D' && (tok.size()==4||tok.size()==5)) {
                     string m=(tok.size()==5?tok[4]:"D");
                     if (m!="D"&&m!="Z") throw ModelException();
-                    double Is=(m=="D"?1e-14:1e-12),nc=(m=="D"?1.0:1.2),Vt=0.02585;
+                    double Is  = 1e-14;
+                    double nc  = 1.0;
+                    double Vt  = (m=="Z" ? 0.7 : 0.02585);
                     int n1=parseNode(tok[2]),n2=parseNode(tok[3]);
                     circuit.addDiode(name,n1,n2,Is,nc,Vt);
-//                    circuit.saveToFile(schematicsDir + filename);
                 }
-                else throw NameException();
+                else throw NameException("Error: Element " + name + " not found in library");
             }
             catch(const SyntaxException&) {
                 fout<<"Error: Inappropriate input\n";
@@ -1507,7 +1423,6 @@ int main() {
             try {
                 if(tok.size()!=2) throw SyntaxException();
                 circuit.deleteElement(tok[1]);
-//                circuit.saveToFile(schematicsDir + filename);
             } catch(const exception& e) {
                 fout<<e.what()<<"\n";
             }
