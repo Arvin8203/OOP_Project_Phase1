@@ -1,4 +1,3 @@
-
 // main.cpp
 // ------------
 // This program reads a small “menu” from InputFile.txt, expects commands such as
@@ -7,7 +6,7 @@
 //   solve dc
 //   tran 0.0001 0 0.01
 //   delete R3
-//   list
+//   list0
 //   .end
 //
 // It builds a circuit in memory using OOP classes.  DC solves use Modified Nodal Analysis
@@ -25,6 +24,8 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <map>
 #include <cmath>
 #include <limits>
@@ -35,8 +36,9 @@ using namespace std;
 //-----------------------------------------------------------------------------
 //   Global: where to read commands and write output
 //-----------------------------------------------------------------------------
-static const string inputPath  = "E:\\CLion\\Project_phase1\\input01.txt";
-static const string outputPath = "E:\\CLion\\Project_phase1\\output01.txt";
+static const string schematicsDir = "schematics/";
+static const string inputPath = schematicsDir + "input01.txt";
+static const string outputPath = schematicsDir + "output01.txt";
 
 //-----------------------------------------------------------------------------
 //   Enumeration of element types & integration methods
@@ -61,9 +63,13 @@ enum IntegrationMethod { BACKWARD_EULER, TRAPEZOIDAL };
 //   Base class for exception handling all circuit elements
 //-----------------------------------------------------------------------------
 class NameException : public exception {
+    string msg;
 public:
+    NameException(const string& m) : msg(m) {}
+    NameException() : msg("Error: Element not found in library") {}
+
     const char* what() const noexcept override {
-        return "Error: Element not found in library";
+            return msg.c_str();
     }
 };
 
@@ -73,28 +79,28 @@ private:
 public:
     ValueException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        if (elementType == "resistor") {
-            return "Error: Resistance cannot be zero or negative";
-        } else if (elementType == "capacitor") {
-            return "Error: Capacitance cannot be zero or negative";
-        } else if (elementType == "inductor") {
-            return "Error: Inductance cannot be zero or negative";
-        }
-        return "Error: Invalid value";
+            if (elementType == "resistor") {
+                return "Error: Resistance cannot be zero or negative";
+            } else if (elementType == "capacitor") {
+                return "Error: Capacitance cannot be zero or negative";
+            } else if (elementType == "inductor") {
+                return "Error: Inductance cannot be zero or negative";
+            }
+            return "Error: Invalid value";
     }
 };
 
 class SyntaxException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Syntax error";
+            return "Error: Syntax error";
     }
 };
 
 class ModelException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Model not found in library";
+            return "Error: Model not found in library";
     }
 };
 
@@ -105,9 +111,9 @@ private:
 public:
     DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+            return msg.c_str();
     }
 };
 
@@ -117,9 +123,9 @@ private:
 public:
     NotFoundException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: Cannot delete " + elementType + "; component not found";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: Cannot delete " + elementType + "; component not found";
+            return msg.c_str();
     }
 };
 
@@ -524,6 +530,20 @@ public:
             if (e->name == nm) return true;
         return false;
     }
+    void resetElementStates() {
+        for (auto e : elements) {
+            if (e->type == CAPACITOR) {
+                auto c = static_cast<Capacitor*>(e);
+                c->lastVoltageDiff = 0.0;
+                c->lastCurrent = 0.0;
+            }
+            else if (e->type == INDUCTOR) {
+                auto l = static_cast<Inductor*>(e);
+                l->lastCurrent = 0.0;
+                l->lastVoltage = 0.0;
+            }
+        }
+    }
 
     // List everything
     void listElements(ofstream& out, const string& filter = "") const {
@@ -759,6 +779,8 @@ public:
             if (e->type == DIODE) { hasDiode = true; break; }
         }
 
+
+
         // If no diodes, we can solve in one shot
         vector<double> x(dim, 0.0);
         if (!hasDiode) {
@@ -854,6 +876,87 @@ public:
         }
         return true;
     }
+    void solveDCSweep(ofstream& out, const string& sourceName,
+                      double start, double end, double increment,
+                      const vector<string>& vars) {
+        // Find the voltage source
+        CircuitElement* src = findElement(sourceName);
+        if (!src || src->type != VSOURCE) {
+            out << "ERROR: Voltage source '" << sourceName << "' not found.\n";
+            return;
+        }
+        auto* vsrc = static_cast<VoltageSource*>(src);
+
+        // Save original voltage
+        double originalVoltage = vsrc->voltage;
+
+        // Print header
+        out << sourceName;
+        for (const auto& var : vars) {
+            out << "\t" << var;
+        }
+        out << "\n";
+
+        // Perform sweep
+        for (double value = start; value <= end; value += increment) {
+            vsrc->voltage = value;
+
+            vector<double> nodeVoltages;
+            if (!solveDC(nodeVoltages, out)) {
+                out << "DC solve failed at " << value << " V\n";
+                continue;
+            }
+
+            // Output source value
+            out << value;
+
+            // Output each variable
+            for (const auto& var : vars) {
+                if (var[0] == 'V') {
+                    // Extract node name
+                    string nodeName = var.substr(2, var.size()-3);
+                    if (nameToNode.find(nodeName) == nameToNode.end()) {
+                        out << "\tERROR";
+                    } else {
+                        int nodeNum = nameToNode[nodeName];
+                        if (nodeNum < nodeVoltages.size()) {
+                            out << "\t" << nodeVoltages[nodeNum];
+                        } else {
+                            out << "\t0.0";
+                        }
+                    }
+                }
+                else if (var[0] == 'I') {
+                    // Extract component name
+                    string compName = var.substr(2, var.size()-3);
+                    CircuitElement* elem = findElement(compName);
+                    if (!elem) {
+                        out << "\tERROR";
+                    } else if (elem->type == RESISTOR) {
+                        auto r = static_cast<Resistor*>(elem);
+                        double v1 = nodeVoltages[r->node1];
+                        double v2 = nodeVoltages[r->node2];
+                        double i = (v1 - v2) / r->resistance;
+                        out << "\t" << i;
+                    }
+                    else if (elem->type == VSOURCE) {
+                        // For voltage sources, we need to get the branch current
+                        // This would require storing MNA solution - placeholder
+                        out << "\t<not_implemented>";
+                    }
+                    else {
+                        out << "\t<unsupported>";
+                    }
+                }
+            }
+            out << "\n";
+        }
+
+        // Restore original voltage
+        vsrc->voltage = originalVoltage;
+    }
+
+
 
     //----------------------------------------------------------------------------------------
     //   Transient simulation (Backward Euler or Trapezoidal halfway).  We do not re‐solve
@@ -866,6 +969,7 @@ public:
                            IntegrationMethod method, ofstream& out,
                            const vector<string>& vars) {
         // Step 1: Do a DC solve once to fix diode Gd and Ieq at DC O.P.  Otherwise they might lock in the wrong branch.
+        resetElementStates();
         vector<double> dcVolt;
         if (!solveDC(dcVolt, out)) {
             out << "Warning: cannot get diode operating point—transient will crash\n";
@@ -1216,18 +1320,37 @@ double convertValue(const string& valStr) {
 //   main(): read “menu” from input, build circuit, respond to commands, write to output.
 //-----------------------------------------------------------------------------
 int main() {
+    string inputFilename;
+    ofstream archiveOut;
+    bool isNew = false;
+
+    // 1) Open input and output files
+    struct stat st = {0};
+    if (stat(schematicsDir.c_str(), &st) == -1) {
+        mkdir(schematicsDir.c_str());
+    }
     ifstream fin(inputPath);
     ofstream fout(outputPath);
-    if (!fin.is_open()) {
-        cerr << "Cannot open input file " << inputPath << endl;
-        return 1;
-    }
-    if (!fout.is_open()) {
-        cerr << "Cannot open output file " << outputPath << endl;
+    if (!fin.is_open() || !fout.is_open()) {
+        cerr << "Cannot open input or output file\n";
         return 1;
     }
 
-    // 1) Print file menu
+    // 2) Build list of .txt in ./schematics
+    vector<string> availableFiles;
+    DIR* dir = opendir("schematics");
+    if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            string f = entry->d_name;
+            if (f.size() >= 4 && f.substr(f.size()-4) == ".txt") {
+                availableFiles.push_back(f);
+            }
+        }
+        closedir(dir);
+    }
+
+    // 3) Print menu
     fout << "– File Menu –\n";
     fout << "1) show existing schematics\n";
     fout << "2) load schematic from file\n";
@@ -1235,62 +1358,167 @@ int main() {
     fout << "4) exit\n";
     fout << "Enter choice:\n";
 
+    // 4) Read choice
     int choice = 0;
     fin >> choice;
-    if (!fin.good()) {
+    if (!fin.good() || choice < 1 || choice > 4) {
         fout << "Error: Inappropriate input\n";
         return 0;
     }
 
-    vector<string> available = { "draft1", "draft2", "draft3", "elecphase1" };
+    //vector<string> available = { "draft1", "draft2", "draft3", "elecphase1" };
     string filename;
 
+//    if (choice == 1) {
+//        // Option 1: Show existing schematics
+//        fout << "- choose existing schematic:\n";
+//        for (int i = 0; i < (int)available.size(); ++i) {
+//            fout << (i+1) << ") " << available[i] << "\n";
+//        }
+//        fout << "Enter number:\n";
+//        int sel = 0;
+//        fin >> sel;
+//        if (sel < 1 || sel > (int)available.size()) {
+//            fout << "Error: Inappropriate input\n";
+//            return 0;
+//        }
+//        filename = available[sel - 1] + ".txt";
+//    }
+//    else if (choice == 2) {
+//        fout << "Enter netlist filename:\n";
+//        fin >> filename;
+//    }
+//    else if (choice == 3) {
+//        fout << "New schematic. Enter filename to create:\n";
+//        fin >> filename;
+//        ofstream ofs(filename.c_str());
+//        // just create empty file
+//        ofs.close();
+//    }
+//    else {
+//        // exit
+//        return 0;
+//    }
+
     if (choice == 1) {
+        // Option 1: Show existing schematics
         fout << "- choose existing schematic:\n";
-        for (int i = 0; i < (int)available.size(); ++i) {
-            fout << (i+1) << ") " << available[i] << "\n";
+        if (availableFiles.empty()) {
+            fout << "Error: No schematic files found\n";
+            return 0;
         }
-        fout << "Enter number:\n";
-        int sel = 0;
-        fin >> sel;
-        if (sel < 1 || sel > (int)available.size()) {
+        for (int i = 0; i < (int)availableFiles.size(); ++i) {
+            fout << (i + 1) << ") " << availableFiles[i] << "\n";
+        }
+        fout << "Enter number or filename:\n";
+        string choiceStr;
+        fin >> choiceStr;
+        if (!fin.good()) {
             fout << "Error: Inappropriate input\n";
             return 0;
         }
-        filename = available[sel - 1] + ".txt";
+        int sel = 0;
+        try {
+            sel = stoi(choiceStr);
+            if (sel < 1 || sel > (int)availableFiles.size()) {
+                throw out_of_range("");
+            }
+            filename = availableFiles[sel - 1];
+        } catch (...) {
+            auto it = find(availableFiles.begin(), availableFiles.end(), choiceStr);
+            if (it == availableFiles.end()) {
+                fout << "Error: Inappropriate input\n";
+                return 0;
+            }
+            filename = *it;
+        }
     }
     else if (choice == 2) {
+        // Option 2: prompt for filename
         fout << "Enter netlist filename:\n";
         fin >> filename;
+        if (!fin.good()) {
+            fout << "Error: Inappropriate input\n";
+            return 0;
+        }
     }
     else if (choice == 3) {
+//        // Option 3: Create new schematic
+//        fout << "New schematic. Enter filename to create:\n";
+//        fin >> filename;
+//        if (!fin.good()) {
+//            fout << "Error: Inappropriate input\n";
+//            return 0;
+//        }
+//        // Create and register file
+//        ofstream ofs(schematicsDir + filename);
+//        ofs.close();
+//        isNew = true;
+//        archiveOut.open(schematicsDir + filename, ios::app);
+//        if (!archiveOut.is_open()) {
+//            fout << "Error: Cannot open archive file for writing\n";
+//            return 0;
+//        }
+        // Option 3: Create new schematic
         fout << "New schematic. Enter filename to create:\n";
         fin >> filename;
-        ofstream ofs(filename.c_str());
-        // just create empty file
+        if (!fin.good()) { fout << "Error: Inappropriate input\n"; return 0; }
+        // Create and register file
+        ofstream ofs(schematicsDir + filename);
         ofs.close();
+        isNew = true;           // <-- Do NOT open archiveOut here
+
     }
     else {
-        // exit
+        // Option 4: exit
         return 0;
     }
 
-    fout << "Loading schematic: " << filename << "\n";
+    ifstream netin;
 
-    Circuit circuit;
+    // announce loading and start command loop
+    fout << "Loading schematic: " << filename << "\n";
+    fout << "Enter commands (type .end to finish):\n";
+
+//    Circuit circuit;
 
     // skip rest of line
     fin.ignore(numeric_limits<streamsize>::max(), '\n');
-    fout << "Enter commands (type .end to finish):\n";
+    //fout << "Enter commands (type .end to finish):\n";
 
-    while (true) {
-        fout << "> \n";
-        string raw;
-        if (!getline(fin, raw)) break;
-        string line = trim(raw);
-        if (line.empty()) {
-            continue;
+    if (isNew) {
+        archiveOut.open(schematicsDir + filename, ios::app);
+        if (!archiveOut.is_open()) {
+            fout << "Error: Cannot open archive file for writing\n";
+            return 0;
         }
+    }
+
+    if (!isNew) {
+        netin.open(schematicsDir + filename);
+        if (!netin.is_open()) {
+            fout << "Error: File not found\n";
+            return 0;
+        }
+    }
+
+    Circuit circuit;
+
+    // Shared command-processing loop
+    istream* pin = isNew ? &fin : &netin;
+    ifstream fin2;
+
+    string raw, line;
+    while (getline(*pin, raw)) {
+        fout << "> \n";
+        line = trim(raw);
+        if (line.empty()) continue;
+
+        // Archive the command if new schematic
+        if (isNew) {
+            archiveOut << line << "\n";
+        }
+
         if (line == ".end") {
             break;
         }
@@ -1298,10 +1526,13 @@ int main() {
         // tokenize and dispatch
         auto tok = tokenize(line);
         if (tok.empty()) continue;
+
+        //fout << "Processing command: " << line << "\n";
+
         if (tok[0] == ".nodes") {
             circuit.listNodes(fout);
         }
-            // Handle .rename command
+            // Handle rename command
         else if (tok[0] == ".rename" && tok.size() >= 4 && tok[1] == "node") {
             try {
                 if (tok.size() != 4) throw runtime_error("ERROR: Invalid syntax- correct format:\n.rename node <old_name> <new_name>");
@@ -1330,19 +1561,34 @@ int main() {
                 // Parse TRAN parameters
                 // .print TRAN tstep tstop [tstart] [tmaxstep] var1 var2 ...
                 try {
+
+                    if (tok.size() < 4) {
+                        throw runtime_error("ERROR: Too few arguments for .print TRAN");
+                    }
+
                     double tstep = stod(tok[2]);
                     double tstop = stod(tok[3]);
                     double tstart = 0.0;
                     double tmaxstep = tstep;
                     int varStart = 4;
 
-                    if (tok.size() > 4 && isdigit(tok[4][0])) {
-                        tstart = stod(tok[4]);
-                        varStart++;
-
-                        if (tok.size() > 5 && isdigit(tok[5][0])) {
-                            tmaxstep = stod(tok[5]);
+                    if (tok.size() > 4) {
+                        try {
+                            // Try to convert next token to double
+                            tstart = stod(tok[4]);
                             varStart++;
+
+                            // Check for optional Tmaxstep
+                            if (tok.size() > 5) {
+                                try {
+                                    tmaxstep = stod(tok[5]);
+                                    varStart++;
+                                } catch (...) {
+                                    // Not a number - treat as variable
+                                }
+                            }
+                        } catch (...) {
+                            // Not a number - treat as variable
                         }
                     }
 
@@ -1356,10 +1602,18 @@ int main() {
                         throw runtime_error("ERROR: No variables specified");
                     }
 
-                    // Execute transient simulation with selective output
+
+                    // Validate parameters
+                    if (tstep <= 0) throw runtime_error("ERROR: Tstep must be positive");
+                    if (tstop <= 0) throw runtime_error("ERROR: Tstop must be positive");
+                    if (tstart < 0) throw runtime_error("ERROR: Tstart cannot be negative");
+                    if (tmaxstep <= 0) throw runtime_error("ERROR: Tmaxstep must be positive");
+                    if (tstart > tstop) throw runtime_error("ERROR: Tstart cannot be greater than Tstop");
+
+                    // Run transient simulation
                     circuit.simulateTransient(tstop, tstep, BACKWARD_EULER, fout, vars);
-                } catch (...) {
-                    fout << "ERROR: Syntax error in .print TRAN command\n";
+                } catch (const exception& e) {
+                    fout << e.what() << endl;
                 }
             }
 
@@ -1385,7 +1639,7 @@ int main() {
                     }
 
                     // Execute DC sweep
-                    //circuit.solvedc(fout, sourceName, start, end, increment, vars);
+                    circuit.solveDCSweep(fout, sourceName, start, end, increment, vars);
                 } catch (const exception& e) {
                     fout << e.what() << endl;
                 }
@@ -1394,8 +1648,7 @@ int main() {
                 fout << "ERROR: Unknown analysis type in .print command\n";
             }
         }
-
-        if (tok[0] == "add") {
+        else if (tok[0] == "add") {
             try {
                 if (tok.size() < 3) throw SyntaxException();
                 string name = tok[1];
@@ -1517,10 +1770,12 @@ int main() {
             circuit.simulateTransient(tstop, tstep, BACKWARD_EULER, fout, {});
         }
         else {
-            fout << "Error: Syntax error\n";
+            fout << "Error: Syntax error1\n";
         }
     }
 
+    if (isNew) archiveOut.close();
+    if (!isNew) netin.close();
     fout << "Exiting.\n";
     fin.close();
     fout.close();
