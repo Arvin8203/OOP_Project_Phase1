@@ -30,6 +30,10 @@
 #include <cmath>
 #include <limits>
 #include <algorithm>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_main.h>
+#include <functional>
 
 using namespace std;
 
@@ -69,7 +73,7 @@ public:
     NameException() : msg("Error: Element not found in library") {}
 
     const char* what() const noexcept override {
-            return msg.c_str();
+        return msg.c_str();
     }
 };
 
@@ -79,28 +83,28 @@ private:
 public:
     ValueException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-            if (elementType == "resistor") {
-                return "Error: Resistance cannot be zero or negative";
-            } else if (elementType == "capacitor") {
-                return "Error: Capacitance cannot be zero or negative";
-            } else if (elementType == "inductor") {
-                return "Error: Inductance cannot be zero or negative";
-            }
-            return "Error: Invalid value";
+        if (elementType == "resistor") {
+            return "Error: Resistance cannot be zero or negative";
+        } else if (elementType == "capacitor") {
+            return "Error: Capacitance cannot be zero or negative";
+        } else if (elementType == "inductor") {
+            return "Error: Inductance cannot be zero or negative";
+        }
+        return "Error: Invalid value";
     }
 };
 
 class SyntaxException : public exception {
 public:
     const char* what() const noexcept override {
-            return "Error: Syntax error";
+        return "Error: Syntax error";
     }
 };
 
 class ModelException : public exception {
 public:
     const char* what() const noexcept override {
-            return "Error: Model not found in library";
+        return "Error: Model not found in library";
     }
 };
 
@@ -111,9 +115,9 @@ private:
 public:
     DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
     const char* what() const noexcept override {
-            static string msg;
-            msg = "Error: " + elementType + " " + name + " already exists in the circuit";
-            return msg.c_str();
+        static string msg;
+        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+        return msg.c_str();
     }
 };
 
@@ -123,9 +127,9 @@ private:
 public:
     NotFoundException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-            static string msg;
-            msg = "Error: Cannot delete " + elementType + "; component not found";
-            return msg.c_str();
+        static string msg;
+        msg = "Error: Cannot delete " + elementType + "; component not found";
+        return msg.c_str();
     }
 };
 
@@ -333,8 +337,18 @@ private:
     int                    nodeCount;     // how many non‐zero nodes
     map<int, string> nodeNames;  // Map node numbers to names
     map<string, int> nameToNode;
+    int nextNodeIndex = 1;  // Start from 1 (0 is typically ground)
 
 public:
+    //SDL2
+    double tstep = 0.0, tstart = 0.0, tstop = 0.0;  // Transient params
+    double acStartFreq = 0.0, acEndFreq = 0.0;      // AC sweep params
+    int acPoints = 0;
+    string acSweepType = "linear";
+    double phaseBaseFreq = 0.0, phaseStart = 0.0, phaseEnd = 0.0;  // Phase sweep params
+    int phasePoints = 0;
+    //-------------------------------
+
     Circuit() : nodeCount(0) {
         // Initialize ground name
         nodeNames[0] = "GND";
@@ -1243,6 +1257,10 @@ public:
             t += timeStep;
         }
     }
+    //  SDL2
+    int getNextNodeIndex() {
+        return nextNodeIndex++;
+    }
 };
 
 //-----------------------------------------------------------------------------
@@ -1317,9 +1335,107 @@ double convertValue(const string& valStr) {
     }
 }
 //-----------------------------------------------------------------------------
+//   SDL2 : Menu Class
+//-----------------------------------------------------------------------------
+class Menu {
+public:
+    vector<string> labels;
+    TTF_Font* font;
+    SDL_Window* window;
+    vector<SDL_Surface*> menuSurfaces;
+    vector<SDL_Rect> positions;
+    int numItems;
+
+    Menu(TTF_Font* f, SDL_Window* w, const vector<string>& lbls) : font(f), window(w), labels(lbls) {
+        numItems = labels.size();
+        for (const auto& lbl : labels) {
+            SDL_Color color = {255, 255, 255, 255};  // White text
+            menuSurfaces.push_back(TTF_RenderText_Solid(font, lbl.c_str(), color));
+        }
+    }
+
+    ~Menu() {
+        for (auto surf : menuSurfaces) SDL_FreeSurface(surf);
+    }
+
+    void render(int panelX, int panelY) {
+        SDL_Surface* surface = SDL_GetWindowSurface(window);
+        SDL_Rect panelRect = {panelX, panelY, 200, numItems * 30};  // Fixed size panel
+        SDL_FillRect(surface, &panelRect, SDL_MapRGB(surface->format, 128, 128, 128));  // Gray background
+
+        positions.clear();
+        for (int i = 0; i < numItems; ++i) {
+            SDL_Rect pos = {panelX + 10, panelY + (i * 30) + 5, menuSurfaces[i]->w, menuSurfaces[i]->h};
+            SDL_BlitSurface(menuSurfaces[i], NULL, surface, &pos);
+            positions.push_back(pos);
+        }
+        SDL_UpdateWindowSurface(window);
+    }
+
+    int handleEvent(SDL_Event& e) {
+        if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+            int mx = e.button.x, my = e.button.y;
+            for (int i = 0; i < numItems; ++i) {
+                SDL_Rect& pos = positions[i];
+                if (mx >= pos.x && mx <= pos.x + pos.w && my >= pos.y && my <= pos.y + pos.h) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+};
+
+//------------------------------------------------------------
+//   SDL2
+//------------------------------------------------------------
+string TextInput(SDL_Window* window, TTF_Font* font, int x, int y) {
+    string input;
+    bool done = false;
+    SDL_Surface* surface = SDL_GetWindowSurface(window);
+    SDL_Event event;
+    bool caps_lock = false;
+
+    while (!done) {
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_KEYUP) {
+                switch (event.key.keysym.sym) {
+                    case SDLK_RETURN:
+                    case SDLK_KP_ENTER:
+                        done = true;
+                        break;
+                    case SDLK_CAPSLOCK:
+                        caps_lock = !caps_lock;
+                        break;
+                    case SDLK_BACKSPACE:
+                        if (!input.empty()) input.pop_back();
+                        break;
+                    default:
+                        char ch = event.key.keysym.sym;
+                        if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+                            if (caps_lock && (ch >= 'a' && ch <= 'z')) ch = ch - 'a' + 'A';
+                            if (input.length() < 20) input += ch;
+                        }
+                        break;
+                }
+            }
+        }
+        SDL_FillRect(surface, NULL, SDL_MapRGB(surface->format, 255, 255, 255));
+        SDL_Color color = {0, 0, 0, 255};
+        SDL_Surface* textSurface = TTF_RenderText_Solid(font, input.c_str(), color);
+        SDL_Rect pos = {x, y, textSurface->w, textSurface->h};
+        SDL_BlitSurface(textSurface, NULL, surface, &pos);
+        SDL_FreeSurface(textSurface);
+        SDL_UpdateWindowSurface(window);
+        SDL_Delay(16);
+    }
+    return input;
+}
+
+//-----------------------------------------------------------------------------
 //   main(): read “menu” from input, build circuit, respond to commands, write to output.
 //-----------------------------------------------------------------------------
-int main() {
+int main(int argc, char* argv[]) {
     string inputFilename;
     ofstream archiveOut;
     bool isNew = false;
@@ -1479,8 +1595,6 @@ int main() {
     // announce loading and start command loop
     fout << "Loading schematic: " << filename << "\n";
     fout << "Enter commands (type .end to finish):\n";
-
-//    Circuit circuit;
 
     // skip rest of line
     fin.ignore(numeric_limits<streamsize>::max(), '\n');
@@ -1774,10 +1888,420 @@ int main() {
         }
     }
 
+    fout << "Exiting.\n";
     if (isNew) archiveOut.close();
     if (!isNew) netin.close();
-    fout << "Exiting.\n";
     fin.close();
     fout.close();
+//--------------------------------------------------------
+//      SDL2
+//--------------------------------------------------------
+    // Add GUI setup after CLI loop
+    if (SDL_Init(SDL_INIT_VIDEO) < 0 || TTF_Init() < 0) {
+        cerr << "SDL/TTF init failed: " << SDL_GetError() << endl;
+        return 1;
+    }
+    SDL_Window* guiWindow = SDL_CreateWindow("Circuit Simulator Menus", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 600, SDL_WINDOW_SHOWN);
+    if (!guiWindow) {
+        cerr << "Window creation failed: " << SDL_GetError() << endl;
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+    TTF_Font* menuFont = TTF_OpenFont("arial.ttf", 18);  // Replace with actual font path
+    if (!menuFont) {
+        cerr << "Font load failed: " << TTF_GetError() << endl;
+        SDL_DestroyWindow(guiWindow);
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
+    // Menu bar labels and sub-menus
+    vector<string> menuBarLabels = {"Simulation", "Node Library", "File", "Library", "Scope"};
+    Menu* simMenu = nullptr;
+    Menu* nodeMenu = nullptr;
+    Menu* fileMenu = nullptr;
+    Menu* libMenu = nullptr;
+    Menu* scopeMenu = nullptr;
+
+    simMenu = new Menu(menuFont, guiWindow, {"Set Transient Params", "Set AC Sweep", "Set Phase Sweep"});
+    nodeMenu = new Menu(menuFont, guiWindow, {"Resistor", "Capacitor", "Inductor", "Diode", "Voltage Source", "Current Source", "Ground"});
+    fileMenu = new Menu(menuFont, guiWindow, {"Load Schematic", "Save Schematic", "Show Files"});
+    libMenu = new Menu(menuFont, guiWindow, {"Add Subcircuit", "Delete Subcircuit", "List Subcircuits"});
+    scopeMenu = new Menu(menuFont, guiWindow, {"Select Signal", "Math on Signals", "Auto Zoom", "Cursors"});
+
+    string selectedElement = "";
+    bool placementMode = false;
+    int placeX = 0, placeY = 0;
+
+    bool guiRunning = true;
+    SDL_Event guiEvent;
+    int activeMenu = -1;  // Index of open sub-menu (-1 = none)
+
+    while (guiRunning) {
+        while (SDL_PollEvent(&guiEvent)) {
+            if (guiEvent.type == SDL_QUIT) guiRunning = false;
+
+            // Handle top menu bar clicks
+            if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                if (my < 30) {  // Top bar height 30px
+                    activeMenu = mx / 150;  // 150px per menu item
+                    if (activeMenu >= menuBarLabels.size()) activeMenu = -1;
+                }
+            }
+
+            // Handle sub-menu selections (detailed in subparts)
+            int selected = -1;
+            if (activeMenu == 0 && simMenu) selected = simMenu->handleEvent(guiEvent);
+            else if (activeMenu == 1 && nodeMenu) selected = nodeMenu->handleEvent(guiEvent);
+            else if (activeMenu == 2 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
+            else if (activeMenu == 3 && libMenu) selected = libMenu->handleEvent(guiEvent);
+            else if (activeMenu == 4 && scopeMenu) selected = scopeMenu->handleEvent(guiEvent);
+
+            // Process selections
+            if (selected != -1 && activeMenu == 0) {
+                if (selected == 0) {  // Transient Params
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter tstep:", {0, 0, 0, 255});
+                    SDL_Rect rect1 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect1);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.tstep = stod(TextInput(guiWindow, menuFont, 10, 130));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter tstart:", {0, 0, 0, 255});
+                    SDL_Rect rect2 = {10, 160, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect2);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.tstart = stod(TextInput(guiWindow, menuFont, 10, 190));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter tstop:", {0, 0, 0, 255});
+                    SDL_Rect rect3 = {10, 220, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect3);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.tstop = stod(TextInput(guiWindow, menuFont, 10, 250));
+                } else if (selected == 1) {  // AC Sweep
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter start freq:", {0, 0, 0, 255});
+                    SDL_Rect rect4 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect4);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.acStartFreq = stod(TextInput(guiWindow, menuFont, 10, 130));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter end freq:", {0, 0, 0, 255});
+                    SDL_Rect rect5 = {10, 160, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect5);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.acEndFreq = stod(TextInput(guiWindow, menuFont, 10, 190));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter points:", {0, 0, 0, 255});
+                    SDL_Rect rect6 = {10, 220, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect6);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.acPoints = stoi(TextInput(guiWindow, menuFont, 10, 250));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter sweep type (linear/decade):", {0, 0, 0, 255});
+                    SDL_Rect rect7 = {10, 280, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect7);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.acSweepType = TextInput(guiWindow, menuFont, 10, 310);
+                } else if (selected == 2) {  // Phase Sweep
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter base freq:", {0, 0, 0, 255});
+                    SDL_Rect rect8 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect8);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.phaseBaseFreq = stod(TextInput(guiWindow, menuFont, 10, 130));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter start phase:", {0, 0, 0, 255});
+                    SDL_Rect rect9 = {10, 160, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect9);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.phaseStart = stod(TextInput(guiWindow, menuFont, 10, 190));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter end phase:", {0, 0, 0, 255});
+                    SDL_Rect rect10 = {10, 220, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect10);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.phaseEnd = stod(TextInput(guiWindow, menuFont, 10, 250));
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter points:", {0, 0, 0, 255});
+                    SDL_Rect rect11 = {10, 280, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect11);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    circuit.phasePoints = stoi(TextInput(guiWindow, menuFont, 10, 310));
+                }
+
+            }
+            if (selected != -1 && activeMenu == 1) {
+                placementMode = true;
+                if (selected == 0) selectedElement = "R";
+                else if (selected == 1) selectedElement = "C";
+                else if (selected == 2) selectedElement = "L";
+                else if (selected == 3) selectedElement = "D";
+                else if (selected == 4) selectedElement = "V";
+                else if (selected == 5) selectedElement = "I";
+                else if (selected == 6) selectedElement = "G";
+            }
+            if (selected != -1 && activeMenu == 2) {
+                if (selected == 0) {  // Load Schematic
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter file name:", {0, 0, 0, 255});
+                    SDL_Rect rect12 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect12);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    string fileName = TextInput(guiWindow, menuFont, 10, 130);
+                    ifstream netin(schematicsDir + fileName);
+                    if (netin.is_open()) {
+                        string line;
+                        while (getline(netin, line)) {
+                            // Reuse existing CLI parsing logic
+                            istringstream sin(line);
+                            vector<string> tok;
+                            string t;
+                            while (sin >> t) tok.push_back(t);
+                            if (tok.empty()) continue;
+                            // ... [Copy CLI parsing logic for "add", "delete", etc., or call a function to process]
+                        }
+                        netin.close();
+                    }
+                } else if (selected == 1) {  // Save Schematic
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter file name:", {0, 0, 0, 255});
+                    SDL_Rect rect13 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect13);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    string fileName = TextInput(guiWindow, menuFont, 10, 130);
+                    ofstream archiveOut(schematicsDir + fileName);
+                    if (archiveOut.is_open()) {
+                        circuit.listElements(archiveOut);  // Use existing list function
+                        archiveOut.close();
+                    }
+                } else if (selected == 2) {  // Show Files
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    DIR* dir = opendir(schematicsDir.c_str());
+                    if (dir) {
+                        int y = 100;
+                        struct dirent* ent;
+                        while ((ent = readdir(dir))) {
+                            string fname = ent->d_name;
+                            if (fname != "." && fname != "..") {
+                                SDL_Surface* fileText = TTF_RenderText_Solid(menuFont, fname.c_str(), {0, 0, 0, 255});
+                                SDL_Rect rect14 = {10, y, fileText->w, fileText->h};
+                                SDL_BlitSurface(fileText, NULL, guiSurface, &rect14);
+                                SDL_FreeSurface(fileText);
+                                y += 30;
+                            }
+                        }
+                        closedir(dir);
+                    }
+                    SDL_UpdateWindowSurface(guiWindow);
+                    SDL_Delay(2000);  // Show for 2 seconds
+                }
+            }
+            if (selected != -1 && activeMenu == 3) {
+                if (selected == 0) {  // Add Subcircuit
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter subcircuit name:", {0, 0, 0, 255});
+                    SDL_Rect rect15 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect15);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    string subName = TextInput(guiWindow, menuFont, 10, 130);
+                    ofstream subFile(schematicsDir + subName + ".sub");
+                    if (subFile.is_open()) {
+                        circuit.listElements(subFile);  // Save current circuit as subcircuit
+                        subFile.close();
+                    }
+                } else if (selected == 1) {  // Delete Subcircuit
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter subcircuit name:", {0, 0, 0, 255});
+                    SDL_Rect rect16 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect16);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    string subName = TextInput(guiWindow, menuFont, 10, 130);
+                    if (remove((schematicsDir + subName + ".sub").c_str()) != 0) {
+                        SDL_Surface* errText = TTF_RenderText_Solid(menuFont, "Error: Subcircuit not found", {255, 0, 0, 255});
+                        SDL_Rect rect17 = {10, 160, errText->w, errText->h};
+                        SDL_BlitSurface(errText, NULL, guiSurface, &rect17);
+                        SDL_FreeSurface(errText);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        SDL_Delay(1000);
+                    }
+                } else if (selected == 2) {  // List Subcircuits
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    DIR* dir = opendir(schematicsDir.c_str());
+                    if (dir) {
+                        int y = 100;
+                        struct dirent* ent;
+                        while ((ent = readdir(dir))) {
+                            string fname = ent->d_name;
+                            if (fname.find(".sub") != string::npos) {
+                                SDL_Surface* fileText = TTF_RenderText_Solid(menuFont, fname.c_str(), {0, 0, 0, 255});
+                                SDL_Rect rect18 = {10, y, fileText->w, fileText->h};
+                                SDL_BlitSurface(fileText, NULL, guiSurface, &rect18);
+                                SDL_FreeSurface(fileText);
+                                y += 30;
+                            }
+                        }
+                        closedir(dir);
+                    }
+                    SDL_UpdateWindowSurface(guiWindow);
+                    SDL_Delay(2000);  // Show for 2 seconds
+                }
+            }
+            if (selected != -1 && activeMenu == 4) {
+                if (selected == 0) {  // Select Signal
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter node number:", {0, 0, 0, 255});
+                    SDL_Rect rect19 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect19);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    string nodeStr = TextInput(guiWindow, menuFont, 10, 130);
+                    try {
+                        int node = stoi(nodeStr);
+                        vector<double> dcVolt;
+                        if (circuit.solveDC(dcVolt, fout)) {
+                            if (node < dcVolt.size()) {
+                                SDL_Surface* result = TTF_RenderText_Solid(menuFont, ("Node " + nodeStr + ": " + to_string(dcVolt[node]) + " V").c_str(), {0, 0, 0, 255});
+                                SDL_Rect rect20 = {10, 160, result->w, result->h};
+                                SDL_BlitSurface(result, NULL, guiSurface, &rect20);
+                                SDL_FreeSurface(result);
+                                SDL_UpdateWindowSurface(guiWindow);
+                                SDL_Delay(2000);
+                            } else {
+                                SDL_Surface* errText = TTF_RenderText_Solid(menuFont, "Error: Invalid node", {255, 0, 0, 255});
+                                SDL_Rect rect21 = {10, 160, errText->w, errText->h};
+                                SDL_BlitSurface(errText, NULL, guiSurface, &rect21);
+                                SDL_FreeSurface(errText);
+                                SDL_UpdateWindowSurface(guiWindow);
+                                SDL_Delay(1000);
+                            }
+                        }
+                    } catch (const exception& e) {
+                        SDL_Surface* errText = TTF_RenderText_Solid(menuFont, "Error: Invalid input", {255, 0, 0, 255});
+                        SDL_Rect rect22 = {10, 160, errText->w, errText->h};
+                        SDL_BlitSurface(errText, NULL, guiSurface, &rect22);
+                        SDL_FreeSurface(errText);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        SDL_Delay(1000);
+                    }
+                } else if (selected == 1) {  // Math on Signals (placeholder)
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Math operations not implemented", {0, 0, 0, 255});
+                    SDL_Rect rect23 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect23);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    SDL_Delay(1000);
+                } else if (selected == 2) {  // Auto Zoom (placeholder)
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Auto zoom not implemented", {0, 0, 0, 255});
+                    SDL_Rect rect24 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect24);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    SDL_Delay(1000);
+                } else if (selected == 3) {  // Cursors (placeholder)
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Cursors not implemented", {0, 0, 0, 255});
+                    SDL_Rect rect25 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect25);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    SDL_Delay(1000);
+                }
+            }
+            if (selected != -1) activeMenu = -1;  // Close menu after selection
+
+            if (placementMode && guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                placeX = guiEvent.button.x;
+                placeY = guiEvent.button.y;
+                string name = selectedElement + to_string(rand() % 1000);  // Unique name
+                int node1 = circuit.getNextNodeIndex();  // Use existing node indexing
+                int node2 = circuit.getNextNodeIndex();
+                double value = 1.0;  // Default value, could prompt for input
+                try {
+                    if (selectedElement == "R") circuit.addResistor(name, node1, node2, value);
+                    else if (selectedElement == "C") circuit.addCapacitor(name, node1, node2, value);
+                    else if (selectedElement == "L") circuit.addInductor(name, node1, node2, value);
+                    else if (selectedElement == "D") circuit.addDiode(name, node1, node2, 1e-14, 1.0, 0.02585);
+                    else if (selectedElement == "V") circuit.addVoltageSource(name, node1, node2, value);
+                    else if (selectedElement == "I") circuit.addCurrentSource(name, node1, node2, value);
+                    else if (selectedElement == "G") circuit.addGround(name, node1);
+                    placementMode = false;  // Exit placement mode
+                } catch (const exception& e) {
+                    cerr << e.what() << endl;
+                }
+            }
+        }
+
+        // Clear screen
+        SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+        SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));  // White background
+
+        // Render menu bar
+        for (int i = 0; i < menuBarLabels.size(); ++i) {
+            SDL_Color color = {0, 0, 0, 255};
+            SDL_Surface* barText = TTF_RenderText_Solid(menuFont, menuBarLabels[i].c_str(), color);
+            SDL_Rect barPos = {i * 150 + 10, 5, barText->w, barText->h};
+            SDL_BlitSurface(barText, NULL, guiSurface, &barPos);
+            SDL_FreeSurface(barText);
+        }
+
+        // Render active sub-menu
+        if (activeMenu != -1) {
+            int panelX = activeMenu * 150, panelY = 30;
+            if (activeMenu == 0 && simMenu) simMenu->render(panelX, panelY);
+            else if (activeMenu == 1 && nodeMenu) nodeMenu->render(panelX, panelY);
+            else if (activeMenu == 2 && fileMenu) fileMenu->render(panelX, panelY);
+            else if (activeMenu == 3 && libMenu) libMenu->render(panelX, panelY);
+            else if (activeMenu == 4 && scopeMenu) scopeMenu->render(panelX, panelY);
+        }
+
+        if (placementMode) {
+            SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+            SDL_Surface* elemText = TTF_RenderText_Solid(menuFont, ("Place: " + selectedElement).c_str(), {0, 0, 0, 255});
+            SDL_Rect rect26 = {placeX, placeY, elemText->w, elemText->h};
+            SDL_BlitSurface(elemText, NULL, guiSurface, &rect26);
+            SDL_FreeSurface(elemText);
+        }
+
+        SDL_UpdateWindowSurface(guiWindow);
+        SDL_Delay(16);  // ~60 FPS
+    }
+
+    // Cleanup
+    delete simMenu;
+    delete nodeMenu;
+    delete fileMenu;
+    delete libMenu;
+    delete scopeMenu;
+    TTF_CloseFont(menuFont);
+    SDL_DestroyWindow(guiWindow);
+    TTF_Quit();
+    SDL_Quit();
+
     return 0;
 }
