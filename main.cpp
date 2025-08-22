@@ -1263,6 +1263,286 @@ public:
     }
 };
 
+// graphical visualization of electric signal
+class SignalVisualizer {
+private:
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+    TTF_Font* font;
+    vector<vector<double>> signals;
+    vector<string> signalNames;
+    vector<SDL_Color> signalColors;
+    double tStart, tStop, tStep;
+    string currentSignal;
+
+public:
+    SignalVisualizer() : window(nullptr), renderer(nullptr), font(nullptr), tStart(0), tStop(0), tStep(0) {}
+
+    bool initialize() {
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+            cerr << "SDL could not initialize! Error: " << SDL_GetError() << endl;
+            return false;
+        }
+
+        window = SDL_CreateWindow("Signal Visualizer",
+                                  SDL_WINDOWPOS_CENTERED,
+                                  SDL_WINDOWPOS_CENTERED,
+                                  800, 600,
+                                  SDL_WINDOW_SHOWN);
+        if (!window) {
+            cerr << "Window could not be created! Error: " << SDL_GetError() << endl;
+            return false;
+        }
+
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        if (!renderer) {
+            cerr << "Renderer could not be created! Error: " << SDL_GetError() << endl;
+            return false;
+        }
+
+        if (TTF_Init() == -1) {
+            cerr << "TTF could not initialize! Error: " << TTF_GetError() << endl;
+            return false;
+        }
+
+        font = TTF_OpenFont("arial.ttf", 16);
+        if (!font) {
+            cerr << "Failed to load font! Error: " << TTF_GetError() << endl;
+            return false;
+        }
+
+        // Define some colors for different signals
+        signalColors = {
+                {255, 0, 0, 255},     // Red
+                {0, 255, 0, 255},     // Green
+                {0, 0, 255, 255},     // Blue
+                {255, 255, 0, 255},   // Yellow
+                {255, 0, 255, 255},   // Magenta
+                {0, 255, 255, 255}    // Cyan
+        };
+
+        return true;
+    }
+
+    void setParameters(double start, double stop, double step, const string& signal) {
+        tStart = start;
+        tStop = stop;
+        tStep = step;
+        currentSignal = signal;
+    }
+
+    void addSignal(const vector<double>& data, const string& name) {
+        signals.push_back(data);
+        signalNames.push_back(name);
+    }
+
+    void clearSignals() {
+        signals.clear();
+        signalNames.clear();
+    }
+
+    void render() {
+        if (signals.empty()) return;
+
+        // Clear screen
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderClear(renderer);
+
+        // Draw grid
+        drawGrid();
+
+        // Draw signals
+        for (size_t i = 0; i < signals.size(); i++) {
+            drawSignal(signals[i], signalColors[i % signalColors.size()], signalNames[i]);
+        }
+
+        // Draw legend
+        drawLegend();
+
+        // Update screen
+        SDL_RenderPresent(renderer);
+    }
+
+    void drawGrid() {
+        SDL_SetRenderDrawColor(renderer, 220, 220, 220, 255);
+
+        // Draw vertical lines (time grid)
+        int gridWidth = 700;
+        int gridHeight = 400;
+        int gridX = 50;
+        int gridY = 50;
+
+        for (int x = 0; x <= 10; x++) {
+            int xPos = gridX + (x * gridWidth / 10);
+            SDL_RenderDrawLine(renderer, xPos, gridY, xPos, gridY + gridHeight);
+        }
+
+        // Draw horizontal lines (voltage grid)
+        for (int y = 0; y <= 10; y++) {
+            int yPos = gridY + (y * gridHeight / 10);
+            SDL_RenderDrawLine(renderer, gridX, yPos, gridX + gridWidth, yPos);
+        }
+
+        // Draw axes
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderDrawLine(renderer, gridX, gridY, gridX, gridY + gridHeight); // Y-axis
+        SDL_RenderDrawLine(renderer, gridX, gridY + gridHeight, gridX + gridWidth, gridY + gridHeight); // X-axis
+
+        // Draw labels
+        SDL_Color textColor = {0, 0, 0, 255};
+
+        // Time labels
+        for (int x = 0; x <= 10; x++) {
+            double timeValue = tStart + (x * (tStop - tStart) / 10);
+            string label = to_string(timeValue).substr(0, 6);
+            SDL_Surface* textSurface = TTF_RenderText_Solid(font, label.c_str(), textColor);
+            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            SDL_Rect textRect = {gridX + (x * gridWidth / 10) - 15, gridY + gridHeight + 5, textSurface->w, textSurface->h};
+            SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+            SDL_FreeSurface(textSurface);
+            SDL_DestroyTexture(textTexture);
+        }
+
+        // Voltage labels
+        // Find min and max voltage values across all signals
+        double minVoltage = numeric_limits<double>::max();
+        double maxVoltage = numeric_limits<double>::lowest();
+
+        for (const auto& signal : signals) {
+            for (double value : signal) {
+                if (value < minVoltage) minVoltage = value;
+                if (value > maxVoltage) maxVoltage = value;
+            }
+        }
+
+        // Add some padding
+        minVoltage -= 0.1 * fabs(minVoltage);
+        maxVoltage += 0.1 * fabs(maxVoltage);
+
+        for (int y = 0; y <= 10; y++) {
+            double voltageValue = minVoltage + (y * (maxVoltage - minVoltage) / 10);
+            string label = to_string(voltageValue).substr(0, 6);
+            SDL_Surface* textSurface = TTF_RenderText_Solid(font, label.c_str(), textColor);
+            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            SDL_Rect textRect = {gridX - 40, gridY + gridHeight - (y * gridHeight / 10) - 8, textSurface->w, textSurface->h};
+            SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+            SDL_FreeSurface(textSurface);
+            SDL_DestroyTexture(textTexture);
+        }
+
+        // Draw axis titles
+        SDL_Surface* timeTitle = TTF_RenderText_Solid(font, "Time (s)", textColor);
+        SDL_Texture* timeTexture = SDL_CreateTextureFromSurface(renderer, timeTitle);
+        SDL_Rect timeRect = {gridX + gridWidth / 2 - 30, gridY + gridHeight + 30, timeTitle->w, timeTitle->h};
+        SDL_RenderCopy(renderer, timeTexture, NULL, &timeRect);
+        SDL_FreeSurface(timeTitle);
+        SDL_DestroyTexture(timeTexture);
+
+        SDL_Surface* voltageTitle = TTF_RenderText_Solid(font, "Voltage (V)", textColor);
+        SDL_Texture* voltageTexture = SDL_CreateTextureFromSurface(renderer, voltageTitle);
+        SDL_Rect voltageRect = {10, gridY + gridHeight / 2 - 30, voltageTitle->w, voltageTitle->h};
+        SDL_RenderCopy(renderer, voltageTexture, NULL, &voltageRect);
+        SDL_FreeSurface(voltageTitle);
+        SDL_DestroyTexture(voltageTexture);
+    }
+
+    void drawSignal(const vector<double>& signal, const SDL_Color& color, const string& name) {
+        if (signal.empty()) return;
+
+        int gridWidth = 700;
+        int gridHeight = 400;
+        int gridX = 50;
+        int gridY = 50;
+
+        // Find min and max voltage values across all signals
+        double minVoltage = numeric_limits<double>::max();
+        double maxVoltage = numeric_limits<double>::lowest();
+
+        for (const auto& sig : signals) {
+            for (double value : sig) {
+                if (value < minVoltage) minVoltage = value;
+                if (value > maxVoltage) maxVoltage = value;
+            }
+        }
+
+        // Add some padding
+        minVoltage -= 0.1 * fabs(minVoltage);
+        maxVoltage += 0.1 * fabs(maxVoltage);
+
+        SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+
+        // Draw the signal using linear interpolation
+        for (size_t i = 1; i < signal.size(); i++) {
+            double time1 = tStart + (i - 1) * tStep;
+            double time2 = tStart + i * tStep;
+            double voltage1 = signal[i - 1];
+            double voltage2 = signal[i];
+
+            int x1 = gridX + static_cast<int>((time1 - tStart) / (tStop - tStart) * gridWidth);
+            int x2 = gridX + static_cast<int>((time2 - tStart) / (tStop - tStart) * gridWidth);
+
+            int y1 = gridY + gridHeight - static_cast<int>((voltage1 - minVoltage) / (maxVoltage - minVoltage) * gridHeight);
+            int y2 = gridY + gridHeight - static_cast<int>((voltage2 - minVoltage) / (maxVoltage - minVoltage) * gridHeight);
+
+            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+        }
+    }
+
+    void drawLegend() {
+        int legendX = 600;
+        int legendY = 50;
+
+        SDL_Color textColor = {0, 0, 0, 255};
+
+        for (size_t i = 0; i < signalNames.size(); i++) {
+            // Draw color sample
+            SDL_Rect colorRect = {legendX, legendY + static_cast<int>(i * 25), 20, 15};
+            SDL_SetRenderDrawColor(renderer,
+                                   signalColors[i % signalColors.size()].r,
+                                   signalColors[i % signalColors.size()].g,
+                                   signalColors[i % signalColors.size()].b,
+                                   signalColors[i % signalColors.size()].a);
+            SDL_RenderFillRect(renderer, &colorRect);
+
+            // Draw signal name
+            SDL_Surface* textSurface = TTF_RenderText_Solid(font, signalNames[i].c_str(), textColor);
+            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            SDL_Rect textRect = {legendX + 25, legendY + static_cast<int>(i * 25), textSurface->w, textSurface->h};
+            SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+            SDL_FreeSurface(textSurface);
+            SDL_DestroyTexture(textTexture);
+        }
+    }
+
+    void handleEvents() {
+        SDL_Event event;
+        bool running = true;
+
+        while (running) {
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_QUIT) {
+                    running = false;
+                }
+                else if (event.type == SDL_KEYDOWN) {
+                    if (event.key.keysym.sym == SDLK_ESCAPE) {
+                        running = false;
+                    }
+                }
+            }
+
+            render();
+            SDL_Delay(16); // ~60 FPS
+        }
+    }
+
+    ~SignalVisualizer() {
+        if (font) TTF_CloseFont(font);
+        if (renderer) SDL_DestroyRenderer(renderer);
+        if (window) SDL_DestroyWindow(window);
+        TTF_Quit();
+    }
+};
+
 //-----------------------------------------------------------------------------
 //   Simple string utilities (trim + tokenize by whitespace)
 //-----------------------------------------------------------------------------
@@ -1925,7 +2205,7 @@ int main(int argc, char* argv[]) {
     Menu* libMenu = nullptr;
     Menu* scopeMenu = nullptr;
 
-    simMenu = new Menu(menuFont, guiWindow, {"Set Transient Params", "Set AC Sweep", "Set Phase Sweep"});
+    simMenu = new Menu(menuFont, guiWindow, {"Set Transient Params", "Set AC Sweep", "Set Phase Sweep", "Plot Signal"});
     nodeMenu = new Menu(menuFont, guiWindow, {"Resistor", "Capacitor", "Inductor", "Diode", "Voltage Source", "Current Source", "Ground"});
     fileMenu = new Menu(menuFont, guiWindow, {"Load Schematic", "Save Schematic", "Show Files"});
     libMenu = new Menu(menuFont, guiWindow, {"Add Subcircuit", "Delete Subcircuit", "List Subcircuits"});
@@ -2037,6 +2317,59 @@ int main(int argc, char* argv[]) {
                     SDL_FreeSurface(prompt);
                     SDL_UpdateWindowSurface(guiWindow);
                     circuit.phasePoints = stoi(TextInput(guiWindow, menuFont, 10, 310));
+                }
+                else if (selected == 3) {  // Plot Signal
+                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
+                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+
+                    // Prompt for signal parameters
+                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter stop time (t1):", {0, 0, 0, 255});
+                    SDL_Rect rect1 = {10, 100, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect1);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    double t1 = stod(TextInput(guiWindow, menuFont, 10, 130));
+
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter time to start saving data (t0):", {0, 0, 0, 255});
+                    SDL_Rect rect2 = {10, 160, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect2);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    double t0 = stod(TextInput(guiWindow, menuFont, 10, 190));
+
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter maximum timestep:", {0, 0, 0, 255});
+                    SDL_Rect rect3 = {10, 220, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect3);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    double maxTimeStep = stod(TextInput(guiWindow, menuFont, 10, 250));
+
+                    prompt = TTF_RenderText_Solid(menuFont, "Enter node to plot (e.g., V(1)):", {0, 0, 0, 255});
+                    SDL_Rect rect4 = {10, 280, prompt->w, prompt->h};
+                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect4);
+                    SDL_FreeSurface(prompt);
+                    SDL_UpdateWindowSurface(guiWindow);
+                    string nodeToPlot = TextInput(guiWindow, menuFont, 10, 310);
+
+                    // Initialize signal visualizer
+                    SignalVisualizer visualizer;
+
+                    visualizer.setParameters(t0, t1, maxTimeStep, nodeToPlot);
+
+                    // Run transient simulation and capture the signal
+                    vector<double> timePoints;
+                    vector<double> voltageValues;
+
+                    // This would need to be implemented to capture the signal data
+                    // For now, we'll create a dummy signal
+                    for (double t = t0; t <= t1; t += maxTimeStep) {
+                        timePoints.push_back(t);
+                        // In a real implementation, you would get the voltage at this time
+                        voltageValues.push_back(sin(2 * M_PI * t) * 5); // Example sine wave
+                    }
+
+                    visualizer.addSignal(voltageValues, nodeToPlot);
+                    visualizer.handleEvents();
                 }
 
             }
