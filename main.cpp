@@ -73,7 +73,7 @@ public:
     NameException() : msg("Error: Element not found in library") {}
 
     const char* what() const noexcept override {
-        return msg.c_str();
+            return msg.c_str();
     }
 };
 
@@ -83,28 +83,28 @@ private:
 public:
     ValueException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        if (elementType == "resistor") {
-            return "Error: Resistance cannot be zero or negative";
-        } else if (elementType == "capacitor") {
-            return "Error: Capacitance cannot be zero or negative";
-        } else if (elementType == "inductor") {
-            return "Error: Inductance cannot be zero or negative";
-        }
-        return "Error: Invalid value";
+            if (elementType == "resistor") {
+                return "Error: Resistance cannot be zero or negative";
+            } else if (elementType == "capacitor") {
+                return "Error: Capacitance cannot be zero or negative";
+            } else if (elementType == "inductor") {
+                return "Error: Inductance cannot be zero or negative";
+            }
+            return "Error: Invalid value";
     }
 };
 
 class SyntaxException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Syntax error";
+            return "Error: Syntax error";
     }
 };
 
 class ModelException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Model not found in library";
+            return "Error: Model not found in library";
     }
 };
 
@@ -115,9 +115,9 @@ private:
 public:
     DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+            return msg.c_str();
     }
 };
 
@@ -127,9 +127,9 @@ private:
 public:
     NotFoundException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: Cannot delete " + elementType + "; component not found";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: Cannot delete " + elementType + "; component not found";
+            return msg.c_str();
     }
 };
 
@@ -1261,6 +1261,26 @@ public:
     int getNextNodeIndex() {
         return nextNodeIndex++;
     }
+
+    // Get elements for GUI display
+    const vector<CircuitElement*>& getElements() const {
+        return elements;
+    }
+
+    // Clear all elements
+    void clear() {
+        for (auto e : elements) delete e;
+        elements.clear();
+        nodeIndex.clear();
+        indexToNode.clear();
+        nodeCount = 0;
+        nodeNames.clear();
+        nameToNode.clear();
+        nextNodeIndex = 1;
+        // Reinitialize ground
+        nodeNames[0] = "GND";
+        nameToNode["GND"] = 0;
+    }
 };
 
 // graphical visualization of electric signal
@@ -1287,7 +1307,7 @@ public:
         window = SDL_CreateWindow("Signal Visualizer",
                                   SDL_WINDOWPOS_CENTERED,
                                   SDL_WINDOWPOS_CENTERED,
-                                  800, 600,
+                                  1500, 750,
                                   SDL_WINDOW_SHOWN);
         if (!window) {
             cerr << "Window could not be created! Error: " << SDL_GetError() << endl;
@@ -1629,7 +1649,7 @@ public:
     Menu(TTF_Font* f, SDL_Window* w, const vector<string>& lbls) : font(f), window(w), labels(lbls) {
         numItems = labels.size();
         for (const auto& lbl : labels) {
-            SDL_Color color = {255, 255, 255, 255};  // White text
+            SDL_Color color = {0, 0, 0, 255};  // Black text
             menuSurfaces.push_back(TTF_RenderText_Solid(font, lbl.c_str(), color));
         }
     }
@@ -1640,12 +1660,28 @@ public:
 
     void render(int panelX, int panelY) {
         SDL_Surface* surface = SDL_GetWindowSurface(window);
-        SDL_Rect panelRect = {panelX, panelY, 200, numItems * 30};  // Fixed size panel
-        SDL_FillRect(surface, &panelRect, SDL_MapRGB(surface->format, 128, 128, 128));  // Gray background
+
+        // Draw menu panel with better styling
+        SDL_Rect panelRect = {panelX, panelY, 250, numItems * 35 + 10};  // Larger panel
+        SDL_FillRect(surface, &panelRect, SDL_MapRGB(surface->format, 64, 64, 64));  // Dark gray border
+
+        SDL_Rect innerRect = {panelX + 2, panelY + 2, 246, numItems * 35 + 6};
+        SDL_FillRect(surface, &innerRect, SDL_MapRGB(surface->format, 200, 200, 200));  // Light gray background
 
         positions.clear();
         for (int i = 0; i < numItems; ++i) {
-            SDL_Rect pos = {panelX + 10, panelY + (i * 30) + 5, menuSurfaces[i]->w, menuSurfaces[i]->h};
+            // Draw menu item background
+            SDL_Rect itemRect = {panelX + 5, panelY + (i * 35) + 5, 240, 30};
+            SDL_FillRect(surface, &itemRect, SDL_MapRGB(surface->format, 240, 240, 240));  // White item background
+
+            // Draw menu item border
+            SDL_Rect itemBorder = {panelX + 5, panelY + (i * 35) + 5, 240, 30};
+            SDL_FillRect(surface, &itemBorder, SDL_MapRGB(surface->format, 128, 128, 128));  // Gray border
+            SDL_Rect itemInner = {panelX + 6, panelY + (i * 35) + 6, 238, 28};
+            SDL_FillRect(surface, &itemInner, SDL_MapRGB(surface->format, 240, 240, 240));  // White inner
+
+            // Render text
+            SDL_Rect pos = {panelX + 15, panelY + (i * 35) + 10, menuSurfaces[i]->w, menuSurfaces[i]->h};
             SDL_BlitSurface(menuSurfaces[i], NULL, surface, &pos);
             positions.push_back(pos);
         }
@@ -1653,10 +1689,14 @@ public:
     }
 
     int handleEvent(SDL_Event& e) {
+        // Guard: positions is filled by render(); if not ready, ignore this event
+        if (positions.size() != static_cast<size_t>(numItems))
+            return -1;
+
         if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
             int mx = e.button.x, my = e.button.y;
             for (int i = 0; i < numItems; ++i) {
-                SDL_Rect& pos = positions[i];
+                const SDL_Rect& pos = positions[i];
                 if (mx >= pos.x && mx <= pos.x + pos.w && my >= pos.y && my <= pos.y + pos.h) {
                     return i;
                 }
@@ -1675,10 +1715,12 @@ string TextInput(SDL_Window* window, TTF_Font* font, int x, int y) {
     SDL_Surface* surface = SDL_GetWindowSurface(window);
     SDL_Event event;
     bool caps_lock = false;
+    bool key_pressed[256] = {false}; // Track key states to prevent repeat
 
     while (!done) {
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_KEYUP) {
+            if (event.type == SDL_KEYDOWN && !key_pressed[event.key.keysym.sym]) {
+                key_pressed[event.key.keysym.sym] = true;
                 switch (event.key.keysym.sym) {
                     case SDLK_RETURN:
                     case SDLK_KP_ENTER:
@@ -1690,6 +1732,10 @@ string TextInput(SDL_Window* window, TTF_Font* font, int x, int y) {
                     case SDLK_BACKSPACE:
                         if (!input.empty()) input.pop_back();
                         break;
+                    case SDLK_ESCAPE:
+                        input = ""; // Clear input on escape
+                        done = true;
+                        break;
                     default:
                         char ch = event.key.keysym.sym;
                         if ((ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
@@ -1698,14 +1744,30 @@ string TextInput(SDL_Window* window, TTF_Font* font, int x, int y) {
                         }
                         break;
                 }
+            } else if (event.type == SDL_KEYUP) {
+                key_pressed[event.key.keysym.sym] = false;
             }
         }
-        SDL_FillRect(surface, NULL, SDL_MapRGB(surface->format, 255, 255, 255));
+
+        // Clear the input area
+        SDL_Rect inputRect = {x - 5, y - 5, 300, 30}; // Larger area for input
+        SDL_FillRect(surface, &inputRect, SDL_MapRGB(surface->format, 255, 255, 255));
+
+        // Draw input box border
+        SDL_Rect borderRect = {x - 5, y - 5, 300, 30};
+        SDL_FillRect(surface, &borderRect, SDL_MapRGB(surface->format, 200, 200, 200));
+        SDL_Rect innerRect = {x - 3, y - 3, 296, 26};
+        SDL_FillRect(surface, &innerRect, SDL_MapRGB(surface->format, 255, 255, 255));
+
+        // Render input text
         SDL_Color color = {0, 0, 0, 255};
         SDL_Surface* textSurface = TTF_RenderText_Solid(font, input.c_str(), color);
-        SDL_Rect pos = {x, y, textSurface->w, textSurface->h};
-        SDL_BlitSurface(textSurface, NULL, surface, &pos);
-        SDL_FreeSurface(textSurface);
+        if (textSurface) {
+            SDL_Rect pos = {x, y, textSurface->w, textSurface->h};
+            SDL_BlitSurface(textSurface, NULL, surface, &pos);
+            SDL_FreeSurface(textSurface);
+        }
+
         SDL_UpdateWindowSurface(window);
         SDL_Delay(16);
     }
@@ -2181,7 +2243,61 @@ int main(int argc, char* argv[]) {
         cerr << "SDL/TTF init failed: " << SDL_GetError() << endl;
         return 1;
     }
-    SDL_Window* guiWindow = SDL_CreateWindow("Circuit Simulator Menus", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 600, SDL_WINDOW_SHOWN);
+
+    // Create splash screen
+    SDL_Window* splashWindow = SDL_CreateWindow("Circuits & Simulations", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 400, SDL_WINDOW_SHOWN);
+    if (!splashWindow) {
+        cerr << "Splash window creation failed: " << SDL_GetError() << endl;
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
+    SDL_Renderer* splashRenderer = SDL_CreateRenderer(splashWindow, -1, SDL_RENDERER_ACCELERATED);
+    if (!splashRenderer) {
+        cerr << "Splash renderer creation failed: " << SDL_GetError() << endl;
+        SDL_DestroyWindow(splashWindow);
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
+    // Load font for splash screen
+    TTF_Font* splashFont = TTF_OpenFont("arial.ttf", 48);
+    if (!splashFont) {
+        cerr << "Splash font load failed: " << TTF_GetError() << endl;
+        SDL_DestroyRenderer(splashRenderer);
+        SDL_DestroyWindow(splashWindow);
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
+    // Show splash screen for 5 seconds
+    SDL_SetRenderDrawColor(splashRenderer, 128, 128, 128, 255); // Gray background
+    SDL_RenderClear(splashRenderer);
+
+    SDL_Color textColor = {255, 255, 255, 255}; // White text
+    SDL_Surface* textSurface = TTF_RenderText_Solid(splashFont, "Circuits & Simulations", textColor);
+    if (textSurface) {
+        SDL_Texture* textTexture = SDL_CreateTextureFromSurface(splashRenderer, textSurface);
+        if (textTexture) {
+            SDL_Rect textRect = {(800 - textSurface->w) / 2, (400 - textSurface->h) / 2, textSurface->w, textSurface->h};
+            SDL_RenderCopy(splashRenderer, textTexture, NULL, &textRect);
+            SDL_DestroyTexture(textTexture);
+        }
+        SDL_FreeSurface(textSurface);
+    }
+
+    SDL_RenderPresent(splashRenderer);
+    SDL_Delay(5000); // Show for 5 seconds
+
+    // Clean up splash screen
+    TTF_CloseFont(splashFont);
+    SDL_DestroyRenderer(splashRenderer);
+    SDL_DestroyWindow(splashWindow);
+
+    SDL_Window* guiWindow = SDL_CreateWindow("Circuit Simulator Menus", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1500, 750, SDL_WINDOW_SHOWN);
     if (!guiWindow) {
         cerr << "Window creation failed: " << SDL_GetError() << endl;
         TTF_Quit();
@@ -2206,14 +2322,96 @@ int main(int argc, char* argv[]) {
     Menu* scopeMenu = nullptr;
 
     simMenu = new Menu(menuFont, guiWindow, {"Set Transient Params", "Set AC Sweep", "Set Phase Sweep", "Plot Signal"});
-    nodeMenu = new Menu(menuFont, guiWindow, {"Resistor", "Capacitor", "Inductor", "Diode", "Voltage Source", "Current Source", "Ground"});
+    nodeMenu = new Menu(menuFont, guiWindow, {"Resistor", "Capacitor", "Inductor", "Diode", "Voltage Source", "Current Source", "Ground", "Delete Element", "Clear Circuit"});
     fileMenu = new Menu(menuFont, guiWindow, {"Load Schematic", "Save Schematic", "Show Files"});
     libMenu = new Menu(menuFont, guiWindow, {"Add Subcircuit", "Delete Subcircuit", "List Subcircuits"});
     scopeMenu = new Menu(menuFont, guiWindow, {"Select Signal", "Math on Signals", "Auto Zoom", "Cursors"});
 
+    /* 2) STATE — (add palette + simple visual model) */
     string selectedElement = "";
     bool placementMode = false;
     int placeX = 0, placeY = 0;
+    bool showElementText = false; // hide text list on canvas when false
+    bool nodePaletteOpen = false;  // whether the Node Library palette panel is visible
+
+    // --- drag & preview state ---
+    bool dragActive = false;
+    int  dragIndex  = -1;
+    int  dragOffsetX = 0, dragOffsetY = 0;
+
+    struct VisualElement {
+        // typeKey: "R","C","L","D","V","I","G"
+        string typeKey;
+        // label printed on the rectangle (e.g., R123)
+        string label;
+        // center of the rectangle
+        int cx, cy;
+        // rectangle size
+        int w, h;
+        // fill color (SDL mapped pixel)
+        Uint32 fill;
+    };
+    vector<VisualElement> visuals;
+
+    // --- wiring state ---
+    struct Wire {
+        int aElem, aTerm;    // aTerm: 0=left/top, 1=right (for G only 0)
+        int bElem, bTerm;
+        bool hasMid = true;  // polyline with one bend
+        int  midx = 0, midy = 0;
+    };
+    vector<Wire> wires;
+
+    bool wireCreating = false;     // waiting for 2nd terminal
+    int  wireStartElem = -1;
+    int  wireStartTerm = -1;
+
+    bool wireDragActive = false;   // dragging a wire bend
+    int  wireDragIdx = -1;
+
+    int  mouseX = 0, mouseY = 0;   // live cursor for previews
+
+
+    // clickable palette buttons: pair<typeKey, rect>
+    vector<pair<string, SDL_Rect>> nodePaletteRects;
+
+    // value chosen for the element to place
+    double pendingValue = 0.0;
+
+    // inline value prompt (inside Node Library panel)
+    bool valuePromptOpen = false;
+    SDL_Rect valuePromptBox{0,0,0,0};
+    string valuePromptMsg;
+
+    // compact formatter: 1000 -> "1K", 1e-6 -> "1u", etc.
+    auto fmtVal = [](double v, char unitSuffix = '\0') {
+        struct Step { const char* p; double k; } tab[] = {
+                {"T",1e12},{"G",1e9},{"M",1e6},{"K",1e3},{"",1.0},{"m",1e-3},{"u",1e-6},{"n",1e-9},{"p",1e-12},{"f",1e-15}
+        };
+        double av = fabs(v); const char* pref = ""; double scale = 1.0;
+        for (const auto& t : tab) { if (av >= t.k || (&t==&tab[9])) { pref=t.p; scale=t.k; break; } }
+        double num = (scale==0? v : v/scale);
+        ostringstream oss; oss.setf(ios::fixed);
+        oss.precision((fabs(num)<10)?3:((fabs(num)<100)?2:1));
+        oss<<num; string s=oss.str();
+        while (s.size()>1 && s.find('.')!= string::npos && (s.back()=='0' || s.back()=='.')) { if(s.back()=='.'){s.pop_back();break;} s.pop_back(); }
+        string out = s + pref;
+        if (unitSuffix!='\0') out.push_back(unitSuffix);
+        return out;
+    };
+
+    // make final label: "R-1K", "C-10uF", "V-5V", ...
+    auto makeLabel = [&](const string& type, double val){
+        if (type=="R") return string("R-") + fmtVal(val);
+        if (type=="C") return string("C-") + fmtVal(val,'F');
+        if (type=="L") return string("L-") + fmtVal(val,'H');
+        if (type=="V") return string("V-") + fmtVal(val,'V');
+        if (type=="I") return string("I-") + fmtVal(val,'A');
+        if (type=="D") return string("D");
+        if (type=="G") return string("G");
+        return type;
+    };
+
 
     bool guiRunning = true;
     SDL_Event guiEvent;
@@ -2223,73 +2421,171 @@ int main(int argc, char* argv[]) {
         while (SDL_PollEvent(&guiEvent)) {
             if (guiEvent.type == SDL_QUIT) guiRunning = false;
 
+            bool consumedLeftDown = false; // set true when a left-click is used by wire handling
+
             // Handle top menu bar clicks
+            /* 1) LEFT-CLICK selects "Node Library"
+            Open a custom Node Library palette when its menu item is clicked */
             if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
                 int mx = guiEvent.button.x, my = guiEvent.button.y;
-                if (my < 30) {  // Top bar height 30px
-                    activeMenu = mx / 150;  // 150px per menu item
-                    if (activeMenu >= menuBarLabels.size()) activeMenu = -1;
+                if (my < 40) {  // Top bar height 40px
+                    int idx = mx / 200;  // 200px per menu item
+                    if (idx >= 0 && idx < (int)menuBarLabels.size()) {
+                        if (idx == 1) { // index 1 == "Node Library"
+                            nodePaletteOpen = true;
+                            activeMenu = -1;   // close dropdowns
+                        } else {
+                            nodePaletteOpen = false;
+                            activeMenu = idx;
+                        }
+                    } else {
+                        activeMenu = -1;
+                    }
                 }
             }
 
             // Handle sub-menu selections (detailed in subparts)
             int selected = -1;
-            if (activeMenu == 0 && simMenu) selected = simMenu->handleEvent(guiEvent);
-            else if (activeMenu == 1 && nodeMenu) selected = nodeMenu->handleEvent(guiEvent);
-            else if (activeMenu == 2 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
-            else if (activeMenu == 3 && libMenu) selected = libMenu->handleEvent(guiEvent);
-            else if (activeMenu == 4 && scopeMenu) selected = scopeMenu->handleEvent(guiEvent);
+            // Only dispatch clicks that occur below the top bar (i.e., inside the drop-down panel)
+            if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.y >= 40) {
+                if (activeMenu == 0 && simMenu)      selected = simMenu->handleEvent(guiEvent);
+                else if (activeMenu == 1 && nodeMenu) selected = nodeMenu->handleEvent(guiEvent);
+                else if (activeMenu == 2 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
+                else if (activeMenu == 3 && libMenu)  selected = libMenu->handleEvent(guiEvent);
+                else if (activeMenu == 4 && scopeMenu)selected = scopeMenu->handleEvent(guiEvent);
+            }
 
             // Process selections
             if (selected != -1 && activeMenu == 0) {
                 if (selected == 0) {  // Transient Params
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
-                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter tstep:", {0, 0, 0, 255});
-                    SDL_Rect rect1 = {10, 100, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect1);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    circuit.tstep = stod(TextInput(guiWindow, menuFont, 10, 130));
-                    prompt = TTF_RenderText_Solid(menuFont, "Enter tstart:", {0, 0, 0, 255});
-                    SDL_Rect rect2 = {10, 160, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect2);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    circuit.tstart = stod(TextInput(guiWindow, menuFont, 10, 190));
-                    prompt = TTF_RenderText_Solid(menuFont, "Enter tstop:", {0, 0, 0, 255});
-                    SDL_Rect rect3 = {10, 220, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect3);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    circuit.tstop = stod(TextInput(guiWindow, menuFont, 10, 250));
+
+                    // Title
+                    SDL_Surface* title = TTF_RenderText_Solid(menuFont, "Transient Simulation Parameters", {0, 0, 255, 255});
+                    SDL_Rect titleRect = {10, 50, title->w, title->h};
+                    SDL_BlitSurface(title, NULL, guiSurface, &titleRect);
+                    SDL_FreeSurface(title);
+
+                    try {
+                        SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter time step (tstep):", {0, 0, 0, 255});
+                        SDL_Rect rect1 = {10, 100, prompt->w, prompt->h};
+                        SDL_BlitSurface(prompt, NULL, guiSurface, &rect1);
+                        SDL_FreeSurface(prompt);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        string tstepStr = TextInput(guiWindow, menuFont, 10, 130);
+                        if (!tstepStr.empty()) {
+                            circuit.tstep = stod(tstepStr);
+                        }
+
+                        prompt = TTF_RenderText_Solid(menuFont, "Enter start time (tstart):", {0, 0, 0, 255});
+                        SDL_Rect rect2 = {10, 160, prompt->w, prompt->h};
+                        SDL_BlitSurface(prompt, NULL, guiSurface, &rect2);
+                        SDL_FreeSurface(prompt);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        string tstartStr = TextInput(guiWindow, menuFont, 10, 190);
+                        if (!tstartStr.empty()) {
+                            circuit.tstart = stod(tstartStr);
+                        }
+
+                        prompt = TTF_RenderText_Solid(menuFont, "Enter stop time (tstop):", {0, 0, 0, 255});
+                        SDL_Rect rect3 = {10, 220, prompt->w, prompt->h};
+                        SDL_BlitSurface(prompt, NULL, guiSurface, &rect3);
+                        SDL_FreeSurface(prompt);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        string tstopStr = TextInput(guiWindow, menuFont, 10, 250);
+                        if (!tstopStr.empty()) {
+                            circuit.tstop = stod(tstopStr);
+                        }
+
+                        // Show confirmation
+                        SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                        SDL_Surface* confirm = TTF_RenderText_Solid(menuFont, "Transient parameters set successfully!", {0, 128, 0, 255});
+                        SDL_Rect confirmRect = {10, 100, confirm->w, confirm->h};
+                        SDL_BlitSurface(confirm, NULL, guiSurface, &confirmRect);
+                        SDL_FreeSurface(confirm);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        SDL_Delay(2000);
+
+                    } catch (const exception& e) {
+                        SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                        SDL_Surface* error = TTF_RenderText_Solid(menuFont, "Error: Invalid input format", {255, 0, 0, 255});
+                        SDL_Rect errorRect = {10, 100, error->w, error->h};
+                        SDL_BlitSurface(error, NULL, guiSurface, &errorRect);
+                        SDL_FreeSurface(error);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        SDL_Delay(2000);
+                    }
+
                 } else if (selected == 1) {  // AC Sweep
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
-                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter start freq:", {0, 0, 0, 255});
-                    SDL_Rect rect4 = {10, 100, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect4);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    circuit.acStartFreq = stod(TextInput(guiWindow, menuFont, 10, 130));
-                    prompt = TTF_RenderText_Solid(menuFont, "Enter end freq:", {0, 0, 0, 255});
-                    SDL_Rect rect5 = {10, 160, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect5);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    circuit.acEndFreq = stod(TextInput(guiWindow, menuFont, 10, 190));
-                    prompt = TTF_RenderText_Solid(menuFont, "Enter points:", {0, 0, 0, 255});
-                    SDL_Rect rect6 = {10, 220, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect6);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    circuit.acPoints = stoi(TextInput(guiWindow, menuFont, 10, 250));
-                    prompt = TTF_RenderText_Solid(menuFont, "Enter sweep type (linear/decade):", {0, 0, 0, 255});
-                    SDL_Rect rect7 = {10, 280, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect7);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    circuit.acSweepType = TextInput(guiWindow, menuFont, 10, 310);
+
+                    // Title
+                    SDL_Surface* title = TTF_RenderText_Solid(menuFont, "AC Sweep Simulation Parameters", {0, 0, 255, 255});
+                    SDL_Rect titleRect = {10, 50, title->w, title->h};
+                    SDL_BlitSurface(title, NULL, guiSurface, &titleRect);
+                    SDL_FreeSurface(title);
+
+                    try {
+                        SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter start frequency (Hz):", {0, 0, 0, 255});
+                        SDL_Rect rect4 = {10, 100, prompt->w, prompt->h};
+                        SDL_BlitSurface(prompt, NULL, guiSurface, &rect4);
+                        SDL_FreeSurface(prompt);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        string startFreqStr = TextInput(guiWindow, menuFont, 10, 130);
+                        if (!startFreqStr.empty()) {
+                            circuit.acStartFreq = stod(startFreqStr);
+                        }
+
+                        prompt = TTF_RenderText_Solid(menuFont, "Enter end frequency (Hz):", {0, 0, 0, 255});
+                        SDL_Rect rect5 = {10, 160, prompt->w, prompt->h};
+                        SDL_BlitSurface(prompt, NULL, guiSurface, &rect5);
+                        SDL_FreeSurface(prompt);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        string endFreqStr = TextInput(guiWindow, menuFont, 10, 190);
+                        if (!endFreqStr.empty()) {
+                            circuit.acEndFreq = stod(endFreqStr);
+                        }
+
+                        prompt = TTF_RenderText_Solid(menuFont, "Enter number of points:", {0, 0, 0, 255});
+                        SDL_Rect rect6 = {10, 220, prompt->w, prompt->h};
+                        SDL_BlitSurface(prompt, NULL, guiSurface, &rect6);
+                        SDL_FreeSurface(prompt);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        string pointsStr = TextInput(guiWindow, menuFont, 10, 250);
+                        if (!pointsStr.empty()) {
+                            circuit.acPoints = stoi(pointsStr);
+                        }
+
+                        prompt = TTF_RenderText_Solid(menuFont, "Enter sweep type (linear/decade):", {0, 0, 0, 255});
+                        SDL_Rect rect7 = {10, 280, prompt->w, prompt->h};
+                        SDL_BlitSurface(prompt, NULL, guiSurface, &rect7);
+                        SDL_FreeSurface(prompt);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        string sweepTypeStr = TextInput(guiWindow, menuFont, 10, 310);
+                        if (!sweepTypeStr.empty()) {
+                            circuit.acSweepType = sweepTypeStr;
+                        }
+
+                        // Show confirmation
+                        SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                        SDL_Surface* confirm = TTF_RenderText_Solid(menuFont, "AC sweep parameters set successfully!", {0, 128, 0, 255});
+                        SDL_Rect confirmRect = {10, 100, confirm->w, confirm->h};
+                        SDL_BlitSurface(confirm, NULL, guiSurface, &confirmRect);
+                        SDL_FreeSurface(confirm);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        SDL_Delay(2000);
+
+                    } catch (const exception& e) {
+                        SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                        SDL_Surface* error = TTF_RenderText_Solid(menuFont, "Error: Invalid input format", {255, 0, 0, 255});
+                        SDL_Rect errorRect = {10, 100, error->w, error->h};
+                        SDL_BlitSurface(error, NULL, guiSurface, &errorRect);
+                        SDL_FreeSurface(error);
+                        SDL_UpdateWindowSurface(guiWindow);
+                        SDL_Delay(2000);
+                    }
                 } else if (selected == 2) {  // Phase Sweep
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
@@ -2371,17 +2667,6 @@ int main(int argc, char* argv[]) {
                     visualizer.addSignal(voltageValues, nodeToPlot);
                     visualizer.handleEvents();
                 }
-
-            }
-            if (selected != -1 && activeMenu == 1) {
-                placementMode = true;
-                if (selected == 0) selectedElement = "R";
-                else if (selected == 1) selectedElement = "C";
-                else if (selected == 2) selectedElement = "L";
-                else if (selected == 3) selectedElement = "D";
-                else if (selected == 4) selectedElement = "V";
-                else if (selected == 5) selectedElement = "I";
-                else if (selected == 6) selectedElement = "G";
             }
             if (selected != -1 && activeMenu == 2) {
                 if (selected == 0) {  // Load Schematic
@@ -2568,25 +2853,252 @@ int main(int argc, char* argv[]) {
             }
             if (selected != -1) activeMenu = -1;  // Close menu after selection
 
+            // PALETTE CLICK HANDLER — when the palette panel is open, pick an element type
+            if (nodePaletteOpen && guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                for (auto &kv : nodePaletteRects) {
+                    const SDL_Rect& r = kv.second;
+                    if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+                        selectedElement = kv.first;   // "R","C","L","D","V","I","G"
+                        nodePaletteOpen = true;       // KEEP palette open to show inline prompt
+
+                        // message by type
+                        if      (selectedElement=="R") valuePromptMsg = "Enter resistance (Ohms):";
+                        else if (selectedElement=="C") valuePromptMsg = "Enter capacitance (Farads):";
+                        else if (selectedElement=="L") valuePromptMsg = "Enter inductance (Henrys):";
+                        else if (selectedElement=="V") valuePromptMsg = "Enter voltage (Volts):";
+                        else if (selectedElement=="I") valuePromptMsg = "Enter current (Amps):";
+                        else                           valuePromptMsg = "(no value needed)";
+
+                        // open small prompt box (render step will draw it)
+                        valuePromptOpen = true;
+
+                        SDL_UpdateWindowSurface(guiWindow);
+
+                        int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 370;
+                        valuePromptBox = { PAL_X + 20, PAL_Y + PAL_H - 60, PAL_W - 40, 36 };
+
+                        string sVal = "0";
+                        if (selectedElement=="R" || selectedElement=="C" || selectedElement=="L"
+                            || selectedElement=="V" || selectedElement=="I") {
+                            sVal = TextInput(guiWindow, menuFont, valuePromptBox.x + 8, valuePromptBox.y + 8);
+                        }
+
+                        try { pendingValue = stod(sVal); }
+                        catch (...) { pendingValue = 0.0; }
+                        if (selectedElement=="R" && pendingValue<=0) pendingValue = 1000.0;
+                        if (selectedElement=="C" && pendingValue<=0) pendingValue = 1e-6;
+                        if (selectedElement=="L" && pendingValue<=0) pendingValue = 1e-3;
+                        if (selectedElement=="V" && pendingValue==0) pendingValue = 5.0;
+                        if (selectedElement=="I" && pendingValue==0) pendingValue = 1e-3;
+
+                        valuePromptOpen = false;
+                        nodePaletteOpen = false;
+                        placementMode   = true;
+                        break;
+                    }
+                }
+            }
+
+            /* 5) PLACEMENT (also push a VisualElement for drawing) */
+            // follow mouse while dragging (or while previewing placement)
+            if (guiEvent.type == SDL_MOUSEMOTION) {
+                if (dragActive && dragIndex >= 0 && dragIndex < (int)visuals.size()) {
+                    // keep the same grab offset so the cursor stays where you clicked
+                    visuals[dragIndex].cx = guiEvent.motion.x - dragOffsetX;
+                    visuals[dragIndex].cy = guiEvent.motion.y - dragOffsetY;
+                }
+                if (placementMode) {
+                    // just for the ghost preview you already have
+                    placeX = guiEvent.motion.x;
+                    placeY = guiEvent.motion.y;
+                }
+            }
+            // mouse move: live cursor + drag-bend of a wire
+            if (guiEvent.type == SDL_MOUSEMOTION) {
+                mouseX = guiEvent.motion.x; mouseY = guiEvent.motion.y;
+                if (wireDragActive && wireDragIdx >= 0 && wireDragIdx < (int)wires.size()) {
+                    wires[wireDragIdx].midx = mouseX;
+                    wires[wireDragIdx].midy = mouseY;
+                }
+            }
+
+            // --- helper lambdas: terminal geometry & hit-tests ---
+// Return terminal coordinates for a visual element.
+// term: 0=left/top, 1=right (for Ground "G", only 0 exists and is at top edge center)
+            auto getTerminalPos = [&](const VisualElement& v, int term, int& tx, int& ty) {
+                SDL_Rect rect{ v.cx - v.w/2, v.cy - v.h/2, v.w, v.h };
+                if (v.typeKey == "G") { // ground: single terminal at top
+                    tx = v.cx;
+                    ty = rect.y;       // top edge
+                    return;
+                }
+                if (term == 0) {       // left
+                    tx = rect.x;       ty = v.cy;
+                } else {               // right
+                    tx = rect.x + rect.w; ty = v.cy;
+                }
+            };
+
+// Hit-test a specific element's terminals. Returns true if (mx,my) is on a terminal.
+            auto hitTerminal = [&](int elemIndex, int mx, int my, int& term, int& tx, int& ty)->bool {
+                if (elemIndex < 0 || elemIndex >= (int)visuals.size()) return false;
+                const auto& v = visuals[elemIndex];
+                const int R = 6; // same radius as drawComponent() circles
+
+                // test terminal #0
+                int t0x, t0y; getTerminalPos(v, 0, t0x, t0y);
+                if ((mx - t0x)*(mx - t0x) + (my - t0y)*(my - t0y) <= R*R) {
+                    term = 0; tx = t0x; ty = t0y; return true;
+                }
+                // test terminal #1 only for non-ground
+                if (v.typeKey != "G") {
+                    int t1x, t1y; getTerminalPos(v, 1, t1x, t1y);
+                    if ((mx - t1x)*(mx - t1x) + (my - t1y)*(my - t1y) <= R*R) {
+                        term = 1; tx = t1x; ty = t1y; return true;
+                    }
+                }
+                return false;
+            };
+
+            // Distance from point P(px,py) to segment A(x1,y1)-B(x2,y2); for wire hit-tests
+            auto distToSeg = [&](float px, float py, float x1, float y1, float x2, float y2)->float {
+                float vx = x2 - x1, vy = y2 - y1;
+                float wx = px - x1, wy = py - y1;
+                float c1 = vx*wx + vy*wy;
+                if (c1 <= 0) return hypotf(px - x1, py - y1);
+                float c2 = vx*vx + vy*vy;
+                if (c2 <= c1) return hypotf(px - x2, py - y2);
+                float t = c1 / c2;
+                float projx = x1 + t*vx, projy = y1 + t*vy;
+                return hypotf(px - projx, py - projy);
+            };
+
+            // --- wire create / select-bend with left click ---
+            if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT && !placementMode) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+
+                // 1) Check if a terminal circle was clicked
+                int hitElem = -1, hitTerm = -1, hitTx = 0, hitTy = 0;
+                for (int i = (int)visuals.size() - 1; i >= 0; --i) {
+                    int term, tx, ty;
+                    if (hitTerminal(i, mx, my, term, tx, ty)) { hitElem = i; hitTerm = term; hitTx = tx; hitTy = ty; break; }
+                }
+
+                if (hitElem != -1) {
+                    // Left-click on a terminal:
+                    consumedLeftDown = true; // don't let box-drag consume this click
+                    if (!wireCreating) {
+                        // start a wire
+                        wireCreating  = true;
+                        wireStartElem = hitElem;
+                        wireStartTerm = hitTerm;
+                    } else {
+                        // finish the wire if terminal is different
+                        if (!(hitElem == wireStartElem && hitTerm == wireStartTerm)) {
+                            int sx, sy, ex, ey;
+                            getTerminalPos(visuals[wireStartElem], wireStartTerm, sx, sy);
+                            getTerminalPos(visuals[hitElem],       hitTerm,       ex, ey);
+
+                            Wire w;
+                            w.aElem = wireStartElem; w.aTerm = wireStartTerm;
+                            w.bElem = hitElem;       w.bTerm = hitTerm;
+                            w.hasMid = true;
+                            // put the initial bend midway (horizontal first)
+                            w.midx = (sx + ex) / 2;
+                            w.midy = sy;
+                            wires.push_back(w);
+                        }
+                        wireCreating = false;
+                    }
+                } else {
+                    // 2) No terminal: try to grab an existing wire near its mid or on a segment
+                    const float TH = 8.0f;
+                    wireDragIdx = -1;
+                    for (int wi = (int)wires.size() - 1; wi >= 0; --wi) {
+                        int ax, ay, bx, by;
+                        getTerminalPos(visuals[wires[wi].aElem], wires[wi].aTerm, ax, ay);
+                        getTerminalPos(visuals[wires[wi].bElem], wires[wi].bTerm, bx, by);
+                        int mx0 = wires[wi].midx, my0 = wires[wi].midy;
+
+                        // prefer grabbing near the mid handle
+                        if (hypotf(mx - mx0, my - my0) <= TH) { wireDragIdx = wi; break; }
+
+                        float d1 = distToSeg(mx, my, ax, ay, mx0, my0);
+                        float d2 = distToSeg(mx, my, mx0, my0, bx, by);
+                        if (std::min(d1, d2) <= TH) { wireDragIdx = wi; break; }
+                    }
+                    if (wireDragIdx != -1) { wireDragActive = true; consumedLeftDown = true; }
+                }
+            }
+
+            // stop dragging bend on mouse-up
+            if (guiEvent.type == SDL_MOUSEBUTTONUP && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                wireDragActive = false;
+            }
+
+            // click-to-drag on existing components.
+            // first left-click picks the topmost component under cursor and starts dragging;
+            // next left-click drops it.
+            if (!nodePaletteOpen && !consumedLeftDown && guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+
+                if (dragActive) {
+                    // second click -> drop where it is
+                    dragActive = false;
+                } else if (!placementMode) {
+                    // not placing a new part: try to pick an existing one (top-most first)
+                    for (int i = (int)visuals.size() - 1; i >= 0; --i) {
+                        SDL_Rect r{ visuals[i].cx - visuals[i].w/2, visuals[i].cy - visuals[i].h/2, visuals[i].w, visuals[i].h };
+                        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+                            dragActive  = true;
+                            dragIndex   = i;
+                            // remember where inside the box you clicked (nice UX)
+                            dragOffsetX = mx - visuals[i].cx;
+                            dragOffsetY = my - visuals[i].cy;
+                            break;
+                        }
+                    }
+                }
+            }
+
             if (placementMode && guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
                 placeX = guiEvent.button.x;
                 placeY = guiEvent.button.y;
-                string name = selectedElement + to_string(rand() % 1000);  // Unique name
-                int node1 = circuit.getNextNodeIndex();  // Use existing node indexing
+                string name = selectedElement + to_string(rand() % 1000);
+                int node1 = circuit.getNextNodeIndex();
                 int node2 = circuit.getNextNodeIndex();
-                double value = 1.0;  // Default value, could prompt for input
+                double value = pendingValue;  // value we asked
                 try {
-                    if (selectedElement == "R") circuit.addResistor(name, node1, node2, value);
-                    else if (selectedElement == "C") circuit.addCapacitor(name, node1, node2, value);
-                    else if (selectedElement == "L") circuit.addInductor(name, node1, node2, value);
-                    else if (selectedElement == "D") circuit.addDiode(name, node1, node2, 1e-14, 1.0, 0.02585);
-                    else if (selectedElement == "V") circuit.addVoltageSource(name, node1, node2, value);
-                    else if (selectedElement == "I") circuit.addCurrentSource(name, node1, node2, value);
-                    else if (selectedElement == "G") circuit.addGround(name, node1);
-                    placementMode = false;  // Exit placement mode
-                } catch (const exception& e) {
-                    cerr << e.what() << endl;
-                }
+                    if (selectedElement == "R")      { circuit.addResistor(name, node1, node2, value); }
+                    else if (selectedElement == "C") { circuit.addCapacitor(name, node1, node2, value); }
+                    else if (selectedElement == "L") { circuit.addInductor(name, node1, node2, value); }
+                    else if (selectedElement == "D") { circuit.addDiode(name, node1, node2, 1e-14, 1.0, 0.02585); }
+                    else if (selectedElement == "V") { circuit.addVoltageSource(name, node1, node2, value); }
+                    else if (selectedElement == "I") { circuit.addCurrentSource(name, node1, node2, value); }
+                    else if (selectedElement == "G") { circuit.addGround(name, node1); }
+
+                    // choose color (as before) ...
+                    SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
+                    Uint32 fill = SDL_MapRGB(s->format, 220,220,220);
+                    if (selectedElement=="R") fill = SDL_MapRGB(s->format, 255,180,120);
+                    if (selectedElement=="C") fill = SDL_MapRGB(s->format, 140,180,255);
+                    if (selectedElement=="L") fill = SDL_MapRGB(s->format, 160,230,160);
+                    if (selectedElement=="D") fill = SDL_MapRGB(s->format, 210,160,230);
+                    if (selectedElement=="V") fill = SDL_MapRGB(s->format, 255,140,140);
+                    if (selectedElement=="I") fill = SDL_MapRGB(s->format, 140,220,220);
+                    if (selectedElement=="G") fill = SDL_MapRGB(s->format, 200,200,200);
+
+                    int w = (selectedElement=="G") ? 40 : 120;
+                    int h = 40;
+
+                    // label like R-1K, C-10uF, V-5V, ...
+                    string nice = makeLabel(selectedElement, value);
+
+                    visuals.push_back(VisualElement{selectedElement, nice, placeX, placeY, w, h, fill});
+                    placementMode = false;
+                } catch (const exception& e) { cerr << e.what() << endl; }
+
             }
         }
 
@@ -2594,32 +3106,245 @@ int main(int argc, char* argv[]) {
         SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
         SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));  // White background
 
-        // Render menu bar
+        // Render menu bar with better styling
+        SDL_Rect menuBarRect = {0, 0, 1500, 40};  // Full width menu bar
+        SDL_FillRect(guiSurface, &menuBarRect, SDL_MapRGB(guiSurface->format, 64, 64, 64));  // Dark gray background
+
         for (int i = 0; i < menuBarLabels.size(); ++i) {
-            SDL_Color color = {0, 0, 0, 255};
+            // Draw menu button background
+            SDL_Rect buttonRect = {i * 200 + 5, 5, 190, 30};
+            SDL_FillRect(guiSurface, &buttonRect, SDL_MapRGB(guiSurface->format, 128, 128, 128));  // Gray button
+
+            // Draw button border
+            SDL_Rect buttonBorder = {i * 200 + 5, 5, 190, 30};
+            SDL_FillRect(guiSurface, &buttonBorder, SDL_MapRGB(guiSurface->format, 96, 96, 96));  // Darker border
+            SDL_Rect buttonInner = {i * 200 + 6, 6, 188, 28};
+            SDL_FillRect(guiSurface, &buttonInner, SDL_MapRGB(guiSurface->format, 160, 160, 160));  // Lighter inner
+
+            // Render text
+            SDL_Color color = {255, 255, 255, 255};  // White text
             SDL_Surface* barText = TTF_RenderText_Solid(menuFont, menuBarLabels[i].c_str(), color);
-            SDL_Rect barPos = {i * 150 + 10, 5, barText->w, barText->h};
+            SDL_Rect barPos = {i * 200 + 15, 10, barText->w, barText->h};
             SDL_BlitSurface(barText, NULL, guiSurface, &barPos);
             SDL_FreeSurface(barText);
         }
 
         // Render active sub-menu
+        /* 3) SUB-MENUS RENDER
+        Keep normal dropdowns, but "Node Library" uses our custom palette instead */
         if (activeMenu != -1) {
-            int panelX = activeMenu * 150, panelY = 30;
+            int panelX = activeMenu * 200, panelY = 40;
             if (activeMenu == 0 && simMenu) simMenu->render(panelX, panelY);
-            else if (activeMenu == 1 && nodeMenu) nodeMenu->render(panelX, panelY);
             else if (activeMenu == 2 && fileMenu) fileMenu->render(panelX, panelY);
-            else if (activeMenu == 3 && libMenu) libMenu->render(panelX, panelY);
+            else if (activeMenu == 3 && libMenu)  libMenu->render(panelX, panelY);
             else if (activeMenu == 4 && scopeMenu) scopeMenu->render(panelX, panelY);
         }
 
+// Custom Node Library palette
+        if (nodePaletteOpen) {
+            SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
+
+            // simple panel with border
+            SDL_Rect border = {10, 50, 700, 370};
+            SDL_FillRect(s, &border, SDL_MapRGB(s->format,  90,  90,  90));
+            SDL_Rect inner  = {11, 51, 698, 368};
+            SDL_FillRect(s, &inner,  SDL_MapRGB(s->format, 245, 245, 245));
+
+            SDL_Color titleClr = {0,0,0,255};
+            SDL_Surface* title = TTF_RenderText_Solid(menuFont, "Node Library", titleClr);
+            SDL_Rect tpos = {20, 60, title->w, title->h};
+            SDL_BlitSurface(title, NULL, s, &tpos);
+            SDL_FreeSurface(title);
+
+            // 3 columns × 3 rows (7 items used)
+            nodePaletteRects.clear();
+            const vector<pair<string, string>> items = {
+                    {"R","Resistor"}, {"C","Capacitor"}, {"L","Inductor"}, {"D","Diode"},
+                    {"V","Voltage Source"}, {"I","Current Source"}, {"G","Ground"}
+            };
+
+            int bx = 20, by = 100, bw = 210, bh = 70, gapX = 12, gapY = 12;
+            for (size_t i = 0; i < items.size(); ++i) {
+                int col = (int)(i % 3);
+                int row = (int)(i / 3);
+                SDL_Rect btn = { bx + col*(bw+gapX), by + row*(bh+gapY), bw, bh };
+
+                // different fill color per type
+                Uint32 fill = SDL_MapRGB(s->format, 220,220,220);
+                if (items[i].first=="R") fill = SDL_MapRGB(s->format, 255,180,120);
+                if (items[i].first=="C") fill = SDL_MapRGB(s->format, 140,180,255);
+                if (items[i].first=="L") fill = SDL_MapRGB(s->format, 160,230,160);
+                if (items[i].first=="D") fill = SDL_MapRGB(s->format, 210,160,230);
+                if (items[i].first=="V") fill = SDL_MapRGB(s->format, 255,140,140);
+                if (items[i].first=="I") fill = SDL_MapRGB(s->format, 140,220,220);
+                if (items[i].first=="G") fill = SDL_MapRGB(s->format, 200,200,200);
+
+                SDL_FillRect(s, &btn, SDL_MapRGB(s->format, 100,100,100)); // border
+                SDL_Rect innerBtn = { btn.x+1, btn.y+1, btn.w-2, btn.h-2 };
+                SDL_FillRect(s, &innerBtn, fill);
+
+                string label = items[i].first + string("  -  ") + items[i].second;
+                SDL_Surface* lab = TTF_RenderText_Solid(menuFont, label.c_str(), titleClr);
+                SDL_Rect lpos = { btn.x + 10, btn.y + (btn.h - lab->h)/2, lab->w, lab->h };
+                SDL_BlitSurface(lab, NULL, s, &lpos);
+                SDL_FreeSurface(lab);
+
+                nodePaletteRects.push_back({items[i].first, btn});
+            }
+            // draw small input box at bottom of the palette (only when open)
+            if (valuePromptOpen) {
+                const int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 370;
+
+                valuePromptBox = { PAL_X + 20, PAL_Y + PAL_H - 60, PAL_W - 40, 36 };
+                SDL_Rect borderBox = { valuePromptBox.x-1, valuePromptBox.y-1,
+                                       valuePromptBox.w+2, valuePromptBox.h+2 };
+
+                SDL_FillRect(s, &borderBox, SDL_MapRGB(s->format, 90,90,90));      // border
+                SDL_FillRect(s, &valuePromptBox, SDL_MapRGB(s->format, 255,255,255)); // inner
+
+                SDL_Color black{0,0,0,255};
+                SDL_Surface* lbl = TTF_RenderText_Solid(menuFont, valuePromptMsg.c_str(), black);
+                SDL_Rect lpos = { valuePromptBox.x,
+                                  valuePromptBox.y - (lbl->h + 6),
+                                  lbl->w, lbl->h };
+                SDL_BlitSurface(lbl, NULL, s, &lpos);
+                SDL_FreeSurface(lbl);
+            }
+        }
+
+        /* 7) OPTIONAL placement hint */
         if (placementMode) {
-            SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
-            SDL_Surface* elemText = TTF_RenderText_Solid(menuFont, ("Place: " + selectedElement).c_str(), {0, 0, 0, 255});
-            SDL_Rect rect26 = {placeX, placeY, elemText->w, elemText->h};
-            SDL_BlitSurface(elemText, NULL, guiSurface, &rect26);
+            SDL_Surface* elemText = TTF_RenderText_Solid(menuFont, "Click on canvas to place component", {0, 0, 0, 255});
+            SDL_Rect r = {placeX, placeY, elemText->w, elemText->h};
+            SDL_BlitSurface(elemText, NULL, guiSurface, &r);
             SDL_FreeSurface(elemText);
         }
+
+        // === DRAW VISUAL COMPONENTS (rectangles + circular terminals) ===
+        // Helpers defined locally (ok inside the frame loop)
+        auto putPixel = [](SDL_Surface* surf, int x, int y, Uint32 col){
+            if (!surf || x < 0 || y < 0 || x >= surf->w || y >= surf->h) return;
+            Uint8* p = (Uint8*)surf->pixels + y*surf->pitch + x*surf->format->BytesPerPixel;
+            switch (surf->format->BytesPerPixel) {
+                case 1: *p = (Uint8)col; break;
+                case 2: *(Uint16*)p = (Uint16)col; break;
+                case 3: {
+                    Uint8 r,g,b; SDL_GetRGB(col, surf->format, &r,&g,&b);
+                    if (SDL_BYTEORDER == SDL_BIG_ENDIAN) { p[0]=r; p[1]=g; p[2]=b; }
+                    else { p[0]=b; p[1]=g; p[2]=r; }
+                    break;
+                }
+                default: *(Uint32*)p = col; break;
+            }
+        };
+
+        auto drawFilledCircle = [&](SDL_Surface* surf, int cx, int cy, int R, Uint32 col){
+            if (!surf) return;
+            SDL_LockSurface(surf);
+            for (int dy = -R; dy <= R; ++dy) {
+                int dxMax = (int)sqrt((double)R*R - dy*dy);
+                for (int dx = -dxMax; dx <= dxMax; ++dx) putPixel(surf, cx+dx, cy+dy, col);
+            }
+            SDL_UnlockSurface(surf);
+        };
+
+        auto drawLine = [&](SDL_Surface* s, int x1, int y1, int x2, int y2, Uint32 col){
+            if (!s) return;
+            SDL_LockSurface(s);
+            int dx = x2 - x1, dy = y2 - y1;
+            int steps = std::max(std::abs(dx), std::abs(dy));
+            if (steps == 0) { putPixel(s, x1, y1, col); SDL_UnlockSurface(s); return; }
+            float x = (float)x1, y = (float)y1;
+            float sx = dx / (float)steps, sy = dy / (float)steps;
+            for (int i = 0; i <= steps; ++i) {
+                putPixel(s, (int)std::lround(x), (int)std::lround(y), col);
+                x += sx; y += sy;
+            }
+            SDL_UnlockSurface(s);
+        };
+
+        auto drawComponent = [&](SDL_Surface* surf, TTF_Font* f, const VisualElement& v){
+            // main rectangle with 1px border
+            SDL_Rect rect = { v.cx - v.w/2, v.cy - v.h/2, v.w, v.h };
+            SDL_FillRect(surf, &rect, SDL_MapRGB(surf->format, 80,80,80)); // border
+            SDL_Rect inner = { rect.x+1, rect.y+1, rect.w-2, rect.h-2 };
+            SDL_FillRect(surf, &inner, v.fill);
+
+            // center label
+            SDL_Color black = {0,0,0,255};
+            SDL_Surface* lab = TTF_RenderText_Solid(f, v.label.c_str(), black);
+            SDL_Rect lpos = { rect.x + (rect.w - lab->w)/2, rect.y + (rect.h - lab->h)/2, lab->w, lab->h };
+            SDL_BlitSurface(lab, NULL, surf, &lpos);
+            SDL_FreeSurface(lab);
+
+            // circular terminals: Ground has one at TOP; others have left & right
+            Uint32 term = SDL_MapRGB(surf->format, 30,30,30);
+            if (v.typeKey == "G") {
+                int tx = v.cx;
+                int ty = rect.y; // top edge
+                drawFilledCircle(surf, tx, ty, 6, term);
+            } else {
+                int leftX  = rect.x;             int leftY  = v.cy;
+                int rightX = rect.x + rect.w;    int rightY = v.cy;
+                drawFilledCircle(surf, leftX,  leftY,  6, term);
+                drawFilledCircle(surf, rightX, rightY, 6, term);
+            }
+        };
+
+        // --- draw wires (outside drawComponent) ---
+        {
+            SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
+            Uint32 wireCol = SDL_MapRGB(s->format, 0, 0, 0);
+
+            auto termPosDraw = [&](const VisualElement& v, int term, int& tx, int& ty){
+                SDL_Rect rect{ v.cx - v.w/2, v.cy - v.h/2, v.w, v.h };
+                if (v.typeKey == "G") { tx = v.cx; ty = rect.y; return; }
+                if (term == 0) { tx = rect.x;           ty = v.cy; }
+                else           { tx = rect.x + rect.w;  ty = v.cy; }
+            };
+
+            for (const auto& w : wires) {
+                int ax, ay, bx, by;
+                termPosDraw(visuals[w.aElem], w.aTerm, ax, ay);
+                termPosDraw(visuals[w.bElem], w.bTerm, bx, by);
+
+                int mx = w.hasMid ? w.midx : (ax + bx) / 2;
+                int my = w.hasMid ? w.midy : ay;
+
+                drawLine(s, ax, ay, mx, my, wireCol);
+                drawLine(s, mx, my, bx, by, wireCol);
+
+                SDL_Rect handle{ mx - 3, my - 3, 6, 6 };
+                SDL_FillRect(s, &handle, SDL_MapRGB(s->format, 50, 50, 50));
+            }
+        }
+
+        // --- live preview while creating a wire ---
+        if (wireCreating && wireStartElem >= 0) {
+            SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
+            Uint32 wireCol = SDL_MapRGB(s->format, 0, 0, 0);
+
+            int sx, sy;
+            auto termPosDraw = [&](const VisualElement& v, int term, int& tx, int& ty){
+                SDL_Rect rect{ v.cx - v.w/2, v.cy - v.h/2, v.w, v.h };
+                if (v.typeKey == "G") { tx = v.cx; ty = rect.y; return; }
+                if (term == 0) { tx = rect.x;           ty = v.cy; }
+                else           { tx = rect.x + rect.w;  ty = v.cy; }
+            };
+
+            termPosDraw(visuals[wireStartElem], wireStartTerm, sx, sy);
+
+            int midx = (sx + mouseX) / 2;
+            int midy = sy;
+
+            drawLine(s, sx,  sy,   midx, midy, wireCol);
+            drawLine(s, midx, midy, mouseX, mouseY, wireCol);
+        }
+
+        // draw all placed components (AFTER you’ve drawn menu/UI, BEFORE help text + update)
+        SDL_Surface* visSurf = SDL_GetWindowSurface(guiWindow);
+        for (const auto& ve : visuals) drawComponent(visSurf, menuFont, ve);
+        // === END DRAW VISUAL COMPONENTS ===
 
         SDL_UpdateWindowSurface(guiWindow);
         SDL_Delay(16);  // ~60 FPS
