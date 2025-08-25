@@ -277,6 +277,7 @@ public:
 //-----------------------------------------------------------------------------
 //   Simple Gaussian‐Elimination solver for Ax=b  (returns false if singular)
 //-----------------------------------------------------------------------------
+
 class GaussianSolver {
 public:
     // Solve A x = b in place.  Returns false if matrix is singular.
@@ -1584,9 +1585,11 @@ static inline vector<string> tokenize(const string& line) {
 int parseNode(const string& nodeStr) {
     if (nodeStr == "GND") return 0;
     string numStr;
-    for (char c : nodeStr) {
-        if (isdigit(c)) numStr += c;
-    }
+//    for (char c : nodeStr) {
+//        if (isdigit(c)) numStr += c;
+//    }
+    // Remove any non-digit characters (like parentheses)
+    numStr.erase(remove_if(numStr.begin(), numStr.end(), [](char c) { return !isdigit(c); }), numStr.end());
 
     if (numStr.empty()) return 0; // Default to ground if no digits found
     try {
@@ -1645,13 +1648,19 @@ public:
     vector<SDL_Surface*> menuSurfaces;
     vector<SDL_Rect> positions;
     int numItems;
+    int highlightIndex;
 
     Menu(TTF_Font* f, SDL_Window* w, const vector<string>& lbls) : font(f), window(w), labels(lbls) {
         numItems = labels.size();
         for (const auto& lbl : labels) {
             SDL_Color color = {0, 0, 0, 255};  // Black text
             menuSurfaces.push_back(TTF_RenderText_Solid(font, lbl.c_str(), color));
+            highlightIndex = -1;
         }
+    }
+
+    void setHighlight(int idx) {
+        highlightIndex = (idx >= 0 && idx < numItems) ? idx : -1;
     }
 
     ~Menu() {
@@ -1678,7 +1687,10 @@ public:
             SDL_Rect itemBorder = {panelX + 5, panelY + (i * 35) + 5, 240, 30};
             SDL_FillRect(surface, &itemBorder, SDL_MapRGB(surface->format, 128, 128, 128));  // Gray border
             SDL_Rect itemInner = {panelX + 6, panelY + (i * 35) + 6, 238, 28};
-            SDL_FillRect(surface, &itemInner, SDL_MapRGB(surface->format, 240, 240, 240));  // White inner
+            if (i == highlightIndex)
+                SDL_FillRect(surface, &itemInner, SDL_MapRGB(surface->format, 210, 230, 255));  // Highlighted inner
+            else
+                SDL_FillRect(surface, &itemInner, SDL_MapRGB(surface->format, 240, 240, 240));  // Normal inner
 
             // Render text
             SDL_Rect pos = {panelX + 15, panelY + (i * 35) + 10, menuSurfaces[i]->w, menuSurfaces[i]->h};
@@ -1860,6 +1872,7 @@ int main(int argc, char* argv[]) {
 
     if (choice == 1) {
         // Option 1: Show existing schematics
+        SDL_Renderer* renderer;
         fout << "- choose existing schematic:\n";
         if (availableFiles.empty()) {
             fout << "Error: No schematic files found\n";
@@ -1883,6 +1896,33 @@ int main(int argc, char* argv[]) {
             }
             filename = availableFiles[sel - 1];
         } catch (...) {
+            SDL_Rect nextButton = {1380, 710, 100, 30};
+            SDL_Rect backButton = {1270, 710, 100, 30};
+
+            SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+            SDL_RenderFillRect(renderer, &nextButton);
+            SDL_RenderFillRect(renderer, &backButton);
+
+            // Set text for the buttons
+            TTF_Font* font = TTF_OpenFont("arial.ttf", 16);
+            SDL_Color color = {255, 255, 255, 255};  // White text
+            SDL_Surface* nextSurface = TTF_RenderText_Solid(font, "Next", color);
+            SDL_Surface* backSurface = TTF_RenderText_Solid(font, "Back", color);
+
+            SDL_Texture* nextTexture = SDL_CreateTextureFromSurface(renderer, nextSurface);
+            SDL_Texture* backTexture = SDL_CreateTextureFromSurface(renderer, backSurface);
+
+            SDL_Rect nextRect = {1390, 720, nextSurface->w, nextSurface->h};
+            SDL_Rect backRect = {1280, 720, backSurface->w, backSurface->h};
+
+            SDL_RenderCopy(renderer, nextTexture, NULL, &nextRect);
+            SDL_RenderCopy(renderer, backTexture, NULL, &backRect);
+
+            SDL_FreeSurface(nextSurface);
+            SDL_FreeSurface(backSurface);
+            SDL_DestroyTexture(nextTexture);
+            SDL_DestroyTexture(backTexture);
+
             auto it = find(availableFiles.begin(), availableFiles.end(), choiceStr);
             if (it == availableFiles.end()) {
                 fout << "Error: Inappropriate input\n";
@@ -2326,6 +2366,8 @@ int main(int argc, char* argv[]) {
     fileMenu = new Menu(menuFont, guiWindow, {"Load Schematic", "Save Schematic", "Show Files"});
     libMenu = new Menu(menuFont, guiWindow, {"Add Subcircuit", "Delete Subcircuit", "List Subcircuits"});
     scopeMenu = new Menu(menuFont, guiWindow, {"Select Signal", "Math on Signals", "Auto Zoom", "Cursors"});
+    int  simCurrent = -1;
+    bool simNavVisible = false;
 
     /* 2) STATE — (add palette + simple visual model) */
     string selectedElement = "";
@@ -2338,6 +2380,11 @@ int main(int argc, char* argv[]) {
     bool dragActive = false;
     int  dragIndex  = -1;
     int  dragOffsetX = 0, dragOffsetY = 0;
+
+    // --- Simulation summary banner ---
+    string simSummary;
+    bool simSummaryVisible = false;
+
 
     struct VisualElement {
         // typeKey: "R","C","L","D","V","I","G"
@@ -2374,6 +2421,18 @@ int main(int argc, char* argv[]) {
 
     // clickable palette buttons: pair<typeKey, rect>
     vector<pair<string, SDL_Rect>> nodePaletteRects;
+
+    // --- Files panel (bottom-left) ---
+    bool filesPanelVisible = false;
+    SDL_Rect filesPanelRect = {10, 420, 520, 260};
+    vector<string> filesPanelList;
+    vector<SDL_Rect>    filesItemRects;
+    bool   filesViewingContent = false;
+    string               filesActiveName;
+    vector<string>  filesActiveLines;
+    int    filesScroll = 0;
+    SDL_Rect filesCloseRect = {0,0,0,0};
+
 
     // value chosen for the element to place
     double pendingValue = 0.0;
@@ -2419,7 +2478,23 @@ int main(int argc, char* argv[]) {
 
     while (guiRunning) {
         while (SDL_PollEvent(&guiEvent)) {
+
             if (guiEvent.type == SDL_QUIT) guiRunning = false;
+
+            // ESC = go back one step
+            if (guiEvent.type == SDL_KEYDOWN && guiEvent.key.keysym.sym == SDLK_ESCAPE) {
+                if (dragActive) {                // cancel dragging an element
+                    dragActive = false;
+                    dragIndex  = -1;
+                } else if (placementMode) {      // cancel placement mode
+                    placementMode = false;
+                } else if (nodePaletteOpen) {    // close Node Library panel
+                    nodePaletteOpen = false;
+                } else if (activeMenu != -1) {   // close any open dropdown menu
+                    activeMenu = -1;
+                }
+                continue; // consume event
+            }
 
             bool consumedLeftDown = false; // set true when a left-click is used by wire handling
 
@@ -2460,6 +2535,7 @@ int main(int argc, char* argv[]) {
                 if (selected == 0) {  // Transient Params
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    simCurrent = 0; simNavVisible = true; if (simMenu) simMenu->setHighlight(simCurrent);
 
                     // Title
                     SDL_Surface* title = TTF_RenderText_Solid(menuFont, "Transient Simulation Parameters", {0, 0, 255, 255});
@@ -2498,6 +2574,15 @@ int main(int argc, char* argv[]) {
                             circuit.tstop = stod(tstopStr);
                         }
 
+                        // Build summary for bottom banner
+                        simSummary = string("Transient: ")
+                                     + "tstep="  + to_string(circuit.tstep)
+                                     + "  tstart=" + to_string(circuit.tstart)
+                                     + "  tstop="  + to_string(circuit.tstop);
+                        simSummaryVisible = true;           // show on main screen
+                        activeMenu = -1;                    // close menus when we go back
+                        nodePaletteOpen = false;
+
                         // Show confirmation
                         SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
                         SDL_Surface* confirm = TTF_RenderText_Solid(menuFont, "Transient parameters set successfully!", {0, 128, 0, 255});
@@ -2520,6 +2605,7 @@ int main(int argc, char* argv[]) {
                 } else if (selected == 1) {  // AC Sweep
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    simCurrent = 1; simNavVisible = true; if (simMenu) simMenu->setHighlight(simCurrent);
 
                     // Title
                     SDL_Surface* title = TTF_RenderText_Solid(menuFont, "AC Sweep Simulation Parameters", {0, 0, 255, 255});
@@ -2568,6 +2654,15 @@ int main(int argc, char* argv[]) {
                             circuit.acSweepType = sweepTypeStr;
                         }
 
+                        simSummary = string("AC Sweep: ")
+                                     + "fstart=" + to_string(circuit.acStartFreq) + "Hz  "
+                                     + "fend="   + to_string(circuit.acEndFreq)   + "Hz  "
+                                     + "points=" + to_string(circuit.acPoints)
+                                     + "  type=" + circuit.acSweepType;
+                        simSummaryVisible = true;
+                        activeMenu = -1;
+                        nodePaletteOpen = false;
+
                         // Show confirmation
                         SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
                         SDL_Surface* confirm = TTF_RenderText_Solid(menuFont, "AC sweep parameters set successfully!", {0, 128, 0, 255});
@@ -2591,6 +2686,8 @@ int main(int argc, char* argv[]) {
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
                     SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter base freq:", {0, 0, 0, 255});
                     SDL_Rect rect8 = {10, 100, prompt->w, prompt->h};
+                    simCurrent = 2; simNavVisible = true; if (simMenu) simMenu->setHighlight(simCurrent);
+
                     SDL_BlitSurface(prompt, NULL, guiSurface, &rect8);
                     SDL_FreeSurface(prompt);
                     SDL_UpdateWindowSurface(guiWindow);
@@ -2613,10 +2710,20 @@ int main(int argc, char* argv[]) {
                     SDL_FreeSurface(prompt);
                     SDL_UpdateWindowSurface(guiWindow);
                     circuit.phasePoints = stoi(TextInput(guiWindow, menuFont, 10, 310));
+
+                    simSummary = string("Phase Sweep: ")
+                                 + "start="  + to_string(circuit.phaseStart)
+                                 + "  end="  + to_string(circuit.phaseEnd)
+                                 + "  points=" + to_string(circuit.phasePoints);
+                    simSummaryVisible = true;
+                    activeMenu = -1;
+                    nodePaletteOpen = false;
+
                 }
                 else if (selected == 3) {  // Plot Signal
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
+                    simCurrent = 3; simNavVisible = true; if (simMenu) simMenu->setHighlight(simCurrent);
 
                     // Prompt for signal parameters
                     SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter stop time (t1):", {0, 0, 0, 255});
@@ -2646,6 +2753,15 @@ int main(int argc, char* argv[]) {
                     SDL_FreeSurface(prompt);
                     SDL_UpdateWindowSurface(guiWindow);
                     string nodeToPlot = TextInput(guiWindow, menuFont, 10, 310);
+
+                    simSummary = string("Plot: ")
+                                 + "t0=" + to_string(t0)
+                                 + "  t1=" + to_string(t1)
+                                 + "  dt_max=" + to_string(maxTimeStep)
+                                 + "  node=" + nodeToPlot;
+                    simSummaryVisible = true;
+                    activeMenu = -1;
+                    nodePaletteOpen = false;
 
                     // Initialize signal visualizer
                     SignalVisualizer visualizer;
@@ -2706,61 +2822,30 @@ int main(int argc, char* argv[]) {
                         circuit.listElements(archiveOut);  // Use existing list function
                         archiveOut.close();
                     }
-                } else if (selected == 2) {  // Show Files
-                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
-                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
-                    DIR* dir = opendir(schematicsDir.c_str());
-                    if (dir) {
-                        int y = 100;
+                } else if (selected == 2) {  // Show Files  --> show list inside bottom-left panel
+                    filesPanelList.clear();
+                    DIR* d = opendir(schematicsDir.c_str());
+                    if (d) {
                         struct dirent* ent;
-                        while ((ent = readdir(dir))) {
+                        while ((ent = readdir(d))) {
                             string fname = ent->d_name;
-                            if (fname != "." && fname != "..") {
-                                SDL_Surface* fileText = TTF_RenderText_Solid(menuFont, fname.c_str(), {0, 0, 0, 255});
-                                SDL_Rect rect14 = {10, y, fileText->w, fileText->h};
-                                SDL_BlitSurface(fileText, NULL, guiSurface, &rect14);
-                                SDL_FreeSurface(fileText);
-                                y += 30;
+                            if (fname.size() >= 4 && fname.substr(fname.size()-4) == ".txt") {
+                                filesPanelList.push_back(fname);
                             }
                         }
-                        closedir(dir);
+                        closedir(d);
                     }
-                    SDL_UpdateWindowSurface(guiWindow);
-                    SDL_Delay(2000);  // Show for 2 seconds
-                }
-            }
-            if (selected != -1 && activeMenu == 3) {
-                if (selected == 0) {  // Add Subcircuit
-                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
-                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
-                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter subcircuit name:", {0, 0, 0, 255});
-                    SDL_Rect rect15 = {10, 100, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect15);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    string subName = TextInput(guiWindow, menuFont, 10, 130);
-                    ofstream subFile(schematicsDir + subName + ".sub");
-                    if (subFile.is_open()) {
-                        circuit.listElements(subFile);  // Save current circuit as subcircuit
-                        subFile.close();
-                    }
-                } else if (selected == 1) {  // Delete Subcircuit
-                    SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
-                    SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
-                    SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter subcircuit name:", {0, 0, 0, 255});
-                    SDL_Rect rect16 = {10, 100, prompt->w, prompt->h};
-                    SDL_BlitSurface(prompt, NULL, guiSurface, &rect16);
-                    SDL_FreeSurface(prompt);
-                    SDL_UpdateWindowSurface(guiWindow);
-                    string subName = TextInput(guiWindow, menuFont, 10, 130);
-                    if (remove((schematicsDir + subName + ".sub").c_str()) != 0) {
-                        SDL_Surface* errText = TTF_RenderText_Solid(menuFont, "Error: Subcircuit not found", {255, 0, 0, 255});
-                        SDL_Rect rect17 = {10, 160, errText->w, errText->h};
-                        SDL_BlitSurface(errText, NULL, guiSurface, &rect17);
-                        SDL_FreeSurface(errText);
-                        SDL_UpdateWindowSurface(guiWindow);
-                        SDL_Delay(1000);
-                    }
+
+                    sort(filesPanelList.begin(), filesPanelList.end());
+
+                    filesPanelVisible     = true;
+                    filesViewingContent   = false;
+                    filesActiveName.clear();
+                    filesActiveLines.clear();
+                    filesScroll = 0;
+                    SDL_Rect filesCloseRect = {0,0,0,0};
+                    activeMenu = -1;
+
                 } else if (selected == 2) {  // List Subcircuits
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
@@ -2854,6 +2939,70 @@ int main(int argc, char* argv[]) {
             if (selected != -1) activeMenu = -1;  // Close menu after selection
 
             // PALETTE CLICK HANDLER — when the palette panel is open, pick an element type
+            // --- Files panel click handler (select a name, then show its text) ---
+            if (filesPanelVisible && guiEvent.type == SDL_MOUSEWHEEL) {
+                int mx, my; SDL_GetMouseState(&mx, &my);
+                SDL_Rect r = filesPanelRect;
+                if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+                    int step = (SDL_GetModState() & KMOD_SHIFT) ? 10 : 1;
+                    if (guiEvent.wheel.y > 0) filesScroll -= step;        // up
+                    if (guiEvent.wheel.y < 0) filesScroll += step;        // down
+                }
+            }
+
+            if (filesPanelVisible && guiEvent.type == SDL_KEYDOWN) {
+                int step = (SDL_GetModState() & KMOD_SHIFT) ? 10 : 1;
+                switch (guiEvent.key.keysym.sym) {
+                    case SDLK_UP:        filesScroll -= step; break;
+                    case SDLK_DOWN:      filesScroll += step; break;
+                    case SDLK_PAGEUP:    filesScroll -= 10;   break;
+                    case SDLK_PAGEDOWN:  filesScroll += 10;   break;
+                    case SDLK_HOME:      filesScroll = 0;     break;
+                    case SDLK_END:
+                        filesScroll = filesViewingContent
+                                      ? max(0, (int)filesActiveLines.size() - 1)
+                                      : max(0, (int)filesPanelList.size()  - 1);
+                        break;
+                }
+            }
+
+            if (filesPanelVisible && guiEvent.type == SDL_MOUSEBUTTONDOWN
+                && guiEvent.button.button == SDL_BUTTON_LEFT) {
+
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                SDL_Rect r = filesPanelRect;
+
+                if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+                    if (!filesViewingContent) {
+                        for (size_t i = 0; i < filesItemRects.size(); ++i) {
+                            const SDL_Rect& it = filesItemRects[i];
+                            if (mx >= it.x && mx <= it.x + it.w && my >= it.y && my <= it.y + it.h) {
+                                filesActiveName = filesPanelList[i];
+                                filesActiveLines.clear();
+
+                                ifstream in(schematicsDir + filesActiveName);
+                                if (in) {
+                                    string line;
+                                    while (getline(in, line)) filesActiveLines.push_back(line);
+                                    in.close();
+                                    filesViewingContent = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    else {
+                        if (mx >= filesCloseRect.x && mx <= filesCloseRect.x + filesCloseRect.w &&
+                            my >= filesCloseRect.y && my <= filesCloseRect.y + filesCloseRect.h) {
+                            filesViewingContent = false;
+                            filesActiveLines.clear();
+                            filesActiveName.clear();
+                            filesPanelVisible = false;
+                        }
+                    }
+                }
+            }
+
             if (nodePaletteOpen && guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
                 int mx = guiEvent.button.x, my = guiEvent.button.y;
                 for (auto &kv : nodePaletteRects) {
@@ -3026,7 +3175,7 @@ int main(int argc, char* argv[]) {
 
                         float d1 = distToSeg(mx, my, ax, ay, mx0, my0);
                         float d2 = distToSeg(mx, my, mx0, my0, bx, by);
-                        if (std::min(d1, d2) <= TH) { wireDragIdx = wi; break; }
+                        if (min(d1, d2) <= TH) { wireDragIdx = wi; break; }
                     }
                     if (wireDragIdx != -1) { wireDragActive = true; consumedLeftDown = true; }
                 }
@@ -3140,7 +3289,7 @@ int main(int argc, char* argv[]) {
             else if (activeMenu == 4 && scopeMenu) scopeMenu->render(panelX, panelY);
         }
 
-// Custom Node Library palette
+        // Custom Node Library palette
         if (nodePaletteOpen) {
             SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
 
@@ -3252,12 +3401,12 @@ int main(int argc, char* argv[]) {
             if (!s) return;
             SDL_LockSurface(s);
             int dx = x2 - x1, dy = y2 - y1;
-            int steps = std::max(std::abs(dx), std::abs(dy));
+            int steps = max(abs(dx), abs(dy));
             if (steps == 0) { putPixel(s, x1, y1, col); SDL_UnlockSurface(s); return; }
             float x = (float)x1, y = (float)y1;
             float sx = dx / (float)steps, sy = dy / (float)steps;
             for (int i = 0; i <= steps; ++i) {
-                putPixel(s, (int)std::lround(x), (int)std::lround(y), col);
+                putPixel(s, (int)lround(x), (int)lround(y), col);
                 x += sx; y += sy;
             }
             SDL_UnlockSurface(s);
@@ -3346,9 +3495,103 @@ int main(int argc, char* argv[]) {
         for (const auto& ve : visuals) drawComponent(visSurf, menuFont, ve);
         // === END DRAW VISUAL COMPONENTS ===
 
+        // --- Draw Files panel (bottom-left) ---
+        if (filesPanelVisible) {
+            SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
+            SDL_Rect bg = filesPanelRect;
+            SDL_FillRect(s, &bg, SDL_MapRGB(s->format, 245,245,245));
+            SDL_Rect border = { bg.x-1, bg.y-1, bg.w+2, bg.h+2 };
+            SDL_FillRect(s, &border, SDL_MapRGB(s->format, 80,80,80));
+
+            string title = filesViewingContent
+                           ? ("schematics / " + filesActiveName)
+                           : "schematics /";
+            SDL_Surface* t = TTF_RenderText_Solid(menuFont, title.c_str(), SDL_Color{0,0,180,255});
+            SDL_Rect tpos = { bg.x + 8, bg.y + 6, t->w, t->h };
+            SDL_BlitSurface(t, NULL, s, &tpos);
+            SDL_FreeSurface(t);
+
+            if (filesViewingContent) {
+                SDL_Rect closeRect = { bg.x + bg.w - 78, bg.y + 4, 70, 22 };
+                SDL_FillRect(s, &closeRect, SDL_MapRGB(s->format, 220, 0, 0));
+                SDL_Surface* cl = TTF_RenderText_Solid(menuFont, "Close", SDL_Color{255,255,255,255});
+                SDL_Rect clpos = { closeRect.x + (closeRect.w - cl->w)/2, closeRect.y + (closeRect.h - cl->h)/2, cl->w, cl->h };
+                SDL_BlitSurface(cl, NULL, s, &clpos);
+                SDL_FreeSurface(cl);
+                filesCloseRect = closeRect;
+            }
+
+            filesItemRects.clear();
+            int y = bg.y + 30;
+            const int lineH = 20;
+            const int maxY = bg.y + bg.h - 6;
+            int maxLines = max(1, (maxY - y) / lineH);
+
+            if (!filesViewingContent) {
+                // clamp scroll for file names
+                if (!filesPanelList.empty()) {
+                    if (filesScroll < 0) filesScroll = 0;
+                    if ((int)filesPanelList.size() - filesScroll < maxLines)
+                        filesScroll = max(0, (int)filesPanelList.size() - maxLines);
+                }
+
+                int drawn = 0;
+                for (size_t i = (size_t)filesScroll; i < filesPanelList.size(); ++i) {
+                    const string& nm = filesPanelList[i];
+                    SDL_Surface* ln = TTF_RenderText_Solid(menuFont, nm.c_str(), SDL_Color{255,255,255,255});
+                    SDL_Rect rp = { bg.x + 8, y, min(ln->w, bg.w - 16), ln->h };
+                    SDL_BlitSurface(ln, NULL, s, &rp);
+                    SDL_FreeSurface(ln);
+
+                    filesItemRects.push_back({ bg.x + 8, y, bg.w - 16, lineH });
+
+                    y += lineH;
+                    if (++drawn >= maxLines) break;
+                }
+            } else {
+                // clamp scroll for file content
+                if (!filesActiveLines.empty()) {
+                    if (filesScroll < 0) filesScroll = 0;
+                    if ((int)filesActiveLines.size() - filesScroll < maxLines)
+                        filesScroll = max(0, (int)filesActiveLines.size() - maxLines);
+                }
+
+                int drawn = 0;
+                for (int i = filesScroll; i < (int)filesActiveLines.size(); ++i) {
+                    const string& lnstr = filesActiveLines[i];
+                    SDL_Surface* ln = TTF_RenderText_Solid(menuFont, lnstr.c_str(), SDL_Color{255,255,255,255});
+                    SDL_Rect rp = { bg.x + 8, y, min(ln->w, bg.w - 16), ln->h };
+                    SDL_BlitSurface(ln, NULL, s, &rp);
+                    SDL_FreeSurface(ln);
+
+                    y += lineH;
+                    if (++drawn >= maxLines) break;
+                }
+            }
+        }
+
+        // Draw simulation summary banner at bottom (if any)
+        if (simSummaryVisible && !simSummary.empty()) {
+            SDL_Surface* visSurf = SDL_GetWindowSurface(guiWindow);
+            SDL_Color dark = {20, 20, 20, 255};
+            SDL_Surface* line = TTF_RenderText_Solid(menuFont, simSummary.c_str(), dark);
+
+            // place ~20px above bottom
+            int y = visSurf->h - line->h - 20;
+            SDL_Rect pos = {10, y, line->w, line->h};
+
+            // optional: a light background strip for readability
+            SDL_Rect bg = {5, y - 4, min(visSurf->w - 10, line->w + 10), line->h + 8};
+            SDL_FillRect(visSurf, &bg, SDL_MapRGB(visSurf->format, 245, 245, 245));
+
+            SDL_BlitSurface(line, NULL, visSurf, &pos);
+            SDL_FreeSurface(line);
+        }
+
         SDL_UpdateWindowSurface(guiWindow);
         SDL_Delay(16);  // ~60 FPS
     }
+
 
     // Cleanup
     delete simMenu;
