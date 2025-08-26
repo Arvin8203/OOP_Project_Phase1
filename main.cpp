@@ -73,7 +73,7 @@ public:
     NameException() : msg("Error: Element not found in library") {}
 
     const char* what() const noexcept override {
-        return msg.c_str();
+            return msg.c_str();
     }
 };
 
@@ -83,28 +83,28 @@ private:
 public:
     ValueException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        if (elementType == "resistor") {
-            return "Error: Resistance cannot be zero or negative";
-        } else if (elementType == "capacitor") {
-            return "Error: Capacitance cannot be zero or negative";
-        } else if (elementType == "inductor") {
-            return "Error: Inductance cannot be zero or negative";
-        }
-        return "Error: Invalid value";
+            if (elementType == "resistor") {
+                return "Error: Resistance cannot be zero or negative";
+            } else if (elementType == "capacitor") {
+                return "Error: Capacitance cannot be zero or negative";
+            } else if (elementType == "inductor") {
+                return "Error: Inductance cannot be zero or negative";
+            }
+            return "Error: Invalid value";
     }
 };
 
 class SyntaxException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Syntax error";
+            return "Error: Syntax error";
     }
 };
 
 class ModelException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Model not found in library";
+            return "Error: Model not found in library";
     }
 };
 
@@ -115,9 +115,9 @@ private:
 public:
     DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+            return msg.c_str();
     }
 };
 
@@ -127,9 +127,9 @@ private:
 public:
     NotFoundException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: Cannot delete " + elementType + "; component not found";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: Cannot delete " + elementType + "; component not found";
+            return msg.c_str();
     }
 };
 
@@ -397,6 +397,44 @@ public:
             file.close();
         }
     }
+
+    // Disable copy; enable explicit move:
+    Signal(const Signal&) = delete;
+    Signal& operator=(const Signal&) = delete;
+
+    // Custom move ctor/assign: re-open the file in the new object
+    Signal(Signal&& other) noexcept
+            : fileLocation(std::move(other.fileLocation)),
+            file(), chunkSize(other.chunkSize),
+    currentChunk(std::move(other.currentChunk)),
+    columnIndex(other.columnIndex),
+    dataStartPos(other.dataStartPos)
+    {
+        // Re-open stream based on fileLocation and seek to dataStartPos
+        file.open(fileLocation);
+        if (file.is_open()) {
+            file.clear();
+            file.seekg(dataStartPos);
+        }
+    }
+    Signal& operator=(Signal&& other) noexcept {
+        if (this != &other) {
+            if (file.is_open()) file.close();
+            fileLocation  = std::move(other.fileLocation);
+            chunkSize     = other.chunkSize;
+            currentChunk  = std::move(other.currentChunk);
+            columnIndex   = other.columnIndex;
+            dataStartPos  = other.dataStartPos;
+
+            file.open(fileLocation);
+            if (file.is_open()) {
+                file.clear();
+                file.seekg(dataStartPos);
+            }
+        }
+        return *this;
+    }
+
     static Signal add(const Signal& s1, const Signal& s2, const string& outputFilename) {
         ifstream file1(s1.fileLocation);
         ifstream file2(s2.fileLocation);
@@ -2634,18 +2672,22 @@ int main(int argc, char* argv[]) {
     }
 
     // Menu bar labels and sub-menus
-    vector<string> menuBarLabels = {"Simulation", "Node Library", "File", "Library", "Scope"};
+    vector<string> menuBarLabels = {"Simulation", "Node Library", "Node Name", "File", "Library", "Scope"};
     Menu* simMenu = nullptr;
     Menu* nodeMenu = nullptr;
     Menu* fileMenu = nullptr;
     Menu* libMenu = nullptr;
     Menu* scopeMenu = nullptr;
+    Menu* nameMenu = nullptr;
+
 
     simMenu = new Menu(menuFont, guiWindow, {"Set Transient Params", "Set AC Sweep", "Set Phase Sweep", "Plot Signal"});
     nodeMenu = new Menu(menuFont, guiWindow, {"Resistor", "Capacitor", "Inductor", "Diode", "Voltage Source", "Current Source", "Ground", "Delete Element", "Clear Circuit"});
     fileMenu = new Menu(menuFont, guiWindow, {"Load Schematic", "Save Schematic", "Show Files"});
     libMenu = new Menu(menuFont, guiWindow, {"Add Subcircuit", "Delete Subcircuit", "List Subcircuits"});
     scopeMenu = new Menu(menuFont, guiWindow, {"Select Signal", "Math on Signals", "Auto Zoom", "Cursors"});
+    nameMenu = new Menu(menuFont, guiWindow, {"Set Node Name"});
+
     int  simCurrent = -1;
     bool simNavVisible = false;
 
@@ -2677,6 +2719,8 @@ int main(int argc, char* argv[]) {
         int w, h;
         // fill color (SDL mapped pixel)
         Uint32 fill;
+        // internal unique name used in Circuit
+        string name;
     };
     vector<VisualElement> visuals;
 
@@ -2696,8 +2740,14 @@ int main(int argc, char* argv[]) {
     bool wireDragActive = false;   // dragging a wire bend
     int  wireDragIdx = -1;
 
-    int  mouseX = 0, mouseY = 0;   // live cursor for previews
+    // --- context delete state ---
+    bool ctxDeleteVisible = false;
+    SDL_Rect ctxDeleteRect{0,0,0,0};
+    enum class CtxTarget { None, Element, Wire };
+    CtxTarget ctxTarget = CtxTarget::None;
+    int ctxTargetIdx = -1;
 
+    int  mouseX = 0, mouseY = 0;   // live cursor for previews
 
     // clickable palette buttons: pair<typeKey, rect>
     vector<pair<string, SDL_Rect>> nodePaletteRects;
@@ -2713,9 +2763,14 @@ int main(int argc, char* argv[]) {
     int    filesScroll = 0;
     SDL_Rect filesCloseRect = {0,0,0,0};
 
+    bool     ctxDeleteTargetIsWire = false;
+    int      ctxDeleteElemIndex    = -1;
+    int      ctxDeleteWireIndex    = -1;
 
     // value chosen for the element to place
     double pendingValue = 0.0;
+
+    string pendingDiode = "D"; // "D" or "Z"
 
     // inline value prompt (inside Node Library panel)
     bool valuePromptOpen = false;
@@ -2778,6 +2833,36 @@ int main(int argc, char* argv[]) {
 
             bool consumedLeftDown = false; // set true when a left-click is used by wire handling
 
+            // If delete-popup is visible, consume left-click on it
+            if (ctxDeleteVisible &&
+                guiEvent.type == SDL_MOUSEBUTTONDOWN &&
+                guiEvent.button.button == SDL_BUTTON_LEFT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                if (mx >= ctxDeleteRect.x && mx <= ctxDeleteRect.x + ctxDeleteRect.w &&
+                    my >= ctxDeleteRect.y && my <= ctxDeleteRect.y + ctxDeleteRect.h) {
+                    // perform deletion
+                    if (ctxTarget == CtxTarget::Element && ctxTargetIdx >= 0 && ctxTargetIdx < (int)visuals.size()) {
+                        int dead = ctxTargetIdx;
+                        // remove wires touching this element
+                        wires.erase(std::remove_if(wires.begin(), wires.end(),
+                                                   [&](const Wire& w){ return w.aElem==dead || w.bElem==dead; }), wires.end());
+                        // reindex wires after erasing the element
+                        for (auto& w : wires) {
+                            if (w.aElem > dead) --w.aElem;
+                            if (w.bElem > dead) --w.bElem;
+                        }
+                        visuals.erase(visuals.begin()+dead);
+                    } else if (ctxTarget == CtxTarget::Wire && ctxTargetIdx >= 0 && ctxTargetIdx < (int)wires.size()) {
+                        wires.erase(wires.begin()+ctxTargetIdx);
+                    }
+                    ctxDeleteVisible = false; ctxTarget = CtxTarget::None; ctxTargetIdx = -1;
+                    continue; // consume this click
+                } else {
+                    // click outside -> hide popup
+                    ctxDeleteVisible = false; ctxTarget = CtxTarget::None; ctxTargetIdx = -1;
+                }
+            }
+
             // Handle top menu bar clicks
             /* 1) LEFT-CLICK selects "Node Library"
             Open a custom Node Library palette when its menu item is clicked */
@@ -2801,13 +2886,15 @@ int main(int argc, char* argv[]) {
 
             // Handle sub-menu selections (detailed in subparts)
             int selected = -1;
+
             // Only dispatch clicks that occur below the top bar (i.e., inside the drop-down panel)
             if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.y >= 40) {
-                if (activeMenu == 0 && simMenu)      selected = simMenu->handleEvent(guiEvent);
+                if (activeMenu == 0 && simMenu)       selected = simMenu->handleEvent(guiEvent);
                 else if (activeMenu == 1 && nodeMenu) selected = nodeMenu->handleEvent(guiEvent);
-                else if (activeMenu == 2 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
-                else if (activeMenu == 3 && libMenu)  selected = libMenu->handleEvent(guiEvent);
-                else if (activeMenu == 4 && scopeMenu)selected = scopeMenu->handleEvent(guiEvent);
+                else if (activeMenu == 2 && nameMenu) selected = nameMenu->handleEvent(guiEvent);
+                else if (activeMenu == 3 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
+                else if (activeMenu == 4 && libMenu)  selected = libMenu->handleEvent(guiEvent);
+                else if (activeMenu == 5 && scopeMenu)selected = scopeMenu->handleEvent(guiEvent);
             }
 
             // Process selections
@@ -3307,6 +3394,18 @@ int main(int argc, char* argv[]) {
                         int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 370;
                         valuePromptBox = { PAL_X + 20, PAL_Y + PAL_H - 60, PAL_W - 40, 36 };
 
+                        // Special prompt for diode: ask "D" or "Z"
+                        if (selectedElement=="D") {
+                            valuePromptMsg = "Type 'D' (diode) or 'Z' (Zener):";
+                            valuePromptOpen = true;
+                            SDL_UpdateWindowSurface(guiWindow);
+                            int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 370;
+                            valuePromptBox = { PAL_X + 20, PAL_Y + PAL_H - 60, PAL_W - 40, 36 };
+                            std::string sDZ = TextInput(guiWindow, menuFont, valuePromptBox.x + 8, valuePromptBox.y + 8);
+                            if (!sDZ.empty() && (sDZ[0]=='Z' || sDZ[0]=='z')) pendingDiode = "Z";
+                            else pendingDiode = "D";
+                        }
+
                         string sVal = "0";
                         if (selectedElement=="R" || selectedElement=="C" || selectedElement=="L"
                             || selectedElement=="V" || selectedElement=="I") {
@@ -3466,6 +3565,52 @@ int main(int argc, char* argv[]) {
                 wireDragActive = false;
             }
 
+            // 1-j) Right-click => show inline DELETE button near element or wire
+            if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_RIGHT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                ctxDeleteVisible = false;
+
+                // First: check wire handle (midpoint square)
+                int hitWire = -1;
+                for (int i = (int)wires.size() - 1; i >= 0; --i) {
+                    int ax, ay, bx, by;
+                    getTerminalPos(visuals[wires[i].aElem], wires[i].aTerm, ax, ay);
+                    getTerminalPos(visuals[wires[i].bElem], wires[i].bTerm, bx, by);
+                    int hx = wires[i].hasMid ? wires[i].midx : (ax + bx) / 2;
+                    int hy = wires[i].hasMid ? wires[i].midy : ay;
+                    SDL_Rect handle{ hx - 3, hy - 3, 6, 6 };
+                    if (mx >= handle.x && mx <= handle.x + handle.w &&
+                        my >= handle.y && my <= handle.y + handle.h) {
+                        hitWire = i;
+                        break;
+                    }
+                }
+
+                if (hitWire != -1) {
+                    ctxDeleteTargetIsWire = true;
+                    ctxDeleteWireIndex    = hitWire;
+                    ctxDeleteRect         = { mx, my, 70, 24 };
+                    ctxDeleteVisible      = true;
+                } else {
+                    // Otherwise: check elements (top-most)
+                    int hitElem = -1;
+                    for (int i = (int)visuals.size() - 1; i >= 0; --i) {
+                        SDL_Rect r{ visuals[i].cx - visuals[i].w/2, visuals[i].cy - visuals[i].h/2,
+                                    visuals[i].w, visuals[i].h };
+                        if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+                            hitElem = i;
+                            break;
+                        }
+                    }
+                    if (hitElem != -1) {
+                        ctxDeleteTargetIsWire = false;
+                        ctxDeleteElemIndex    = hitElem;
+                        ctxDeleteRect         = { mx, my, 70, 24 };
+                        ctxDeleteVisible      = true;
+                    }
+                }
+            }
+
             // click-to-drag on existing components.
             // first left-click picks the topmost component under cursor and starts dragging;
             // next left-click drops it.
@@ -3521,8 +3666,10 @@ int main(int argc, char* argv[]) {
                     int w = (selectedElement=="G") ? 40 : 120;
                     int h = 40;
 
-                    // label like R-1K, C-10uF, V-5V, ...
-                    string nice = makeLabel(selectedElement, value);
+                    // label like R-1K, ... ; for diode use pendingDiode ("D" or "Z")
+                    std::string nice = (selectedElement=="D")
+                                       ? string(pendingDiode)   // just "D" or "Z"
+                                       : makeLabel(selectedElement, value);
 
                     visuals.push_back(VisualElement{selectedElement, nice, placeX, placeY, w, h, fill});
                     placementMode = false;
@@ -3563,10 +3710,11 @@ int main(int argc, char* argv[]) {
         Keep normal dropdowns, but "Node Library" uses our custom palette instead */
         if (activeMenu != -1) {
             int panelX = activeMenu * 200, panelY = 40;
-            if (activeMenu == 0 && simMenu) simMenu->render(panelX, panelY);
-            else if (activeMenu == 2 && fileMenu) fileMenu->render(panelX, panelY);
-            else if (activeMenu == 3 && libMenu)  libMenu->render(panelX, panelY);
-            else if (activeMenu == 4 && scopeMenu) scopeMenu->render(panelX, panelY);
+            if (activeMenu == 0 && simMenu)       simMenu->render(panelX, panelY);
+            else if (activeMenu == 2 && nameMenu) nameMenu->render(panelX, panelY);
+            else if (activeMenu == 3 && fileMenu) fileMenu->render(panelX, panelY);
+            else if (activeMenu == 4 && libMenu)  libMenu->render(panelX, panelY);
+            else if (activeMenu == 5 && scopeMenu) scopeMenu->render(panelX, panelY);
         }
 
         // Custom Node Library palette
@@ -3850,6 +3998,21 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // 1-d) Draw inline DELETE button if visible
+        if (ctxDeleteVisible) {
+            SDL_Surface* surf = SDL_GetWindowSurface(guiWindow);
+            SDL_FillRect(surf, &ctxDeleteRect, SDL_MapRGB(surf->format, 200, 0, 0));
+            SDL_Rect border{ ctxDeleteRect.x - 1, ctxDeleteRect.y - 1,
+                             ctxDeleteRect.w + 2, ctxDeleteRect.h + 2 };
+            SDL_FillRect(surf, &border, SDL_MapRGB(surf->format, 120, 0, 0));
+            SDL_Surface* t = TTF_RenderText_Solid(menuFont, "Delete", SDL_Color{255,255,255,255});
+            SDL_Rect tp{ ctxDeleteRect.x + (ctxDeleteRect.w - t->w)/2,
+                         ctxDeleteRect.y + (ctxDeleteRect.h - t->h)/2,
+                         t->w, t->h };
+            SDL_BlitSurface(t, NULL, surf, &tp);
+            SDL_FreeSurface(t);
+        }
+
         // Draw simulation summary banner at bottom (if any)
         if (simSummaryVisible && !simSummary.empty()) {
             SDL_Surface* visSurf = SDL_GetWindowSurface(guiWindow);
@@ -3871,7 +4034,6 @@ int main(int argc, char* argv[]) {
         SDL_UpdateWindowSurface(guiWindow);
         SDL_Delay(16);  // ~60 FPS
     }
-
 
     // Cleanup
     delete simMenu;
