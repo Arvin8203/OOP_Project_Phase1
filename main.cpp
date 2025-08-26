@@ -34,6 +34,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_main.h>
 #include <functional>
+#include <complex>
 
 using namespace std;
 
@@ -73,7 +74,7 @@ public:
     NameException() : msg("Error: Element not found in library") {}
 
     const char* what() const noexcept override {
-            return msg.c_str();
+        return msg.c_str();
     }
 };
 
@@ -83,28 +84,28 @@ private:
 public:
     ValueException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-            if (elementType == "resistor") {
-                return "Error: Resistance cannot be zero or negative";
-            } else if (elementType == "capacitor") {
-                return "Error: Capacitance cannot be zero or negative";
-            } else if (elementType == "inductor") {
-                return "Error: Inductance cannot be zero or negative";
-            }
-            return "Error: Invalid value";
+        if (elementType == "resistor") {
+            return "Error: Resistance cannot be zero or negative";
+        } else if (elementType == "capacitor") {
+            return "Error: Capacitance cannot be zero or negative";
+        } else if (elementType == "inductor") {
+            return "Error: Inductance cannot be zero or negative";
+        }
+        return "Error: Invalid value";
     }
 };
 
 class SyntaxException : public exception {
 public:
     const char* what() const noexcept override {
-            return "Error: Syntax error";
+        return "Error: Syntax error";
     }
 };
 
 class ModelException : public exception {
 public:
     const char* what() const noexcept override {
-            return "Error: Model not found in library";
+        return "Error: Model not found in library";
     }
 };
 
@@ -115,9 +116,9 @@ private:
 public:
     DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
     const char* what() const noexcept override {
-            static string msg;
-            msg = "Error: " + elementType + " " + name + " already exists in the circuit";
-            return msg.c_str();
+        static string msg;
+        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+        return msg.c_str();
     }
 };
 
@@ -127,9 +128,9 @@ private:
 public:
     NotFoundException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-            static string msg;
-            msg = "Error: Cannot delete " + elementType + "; component not found";
-            return msg.c_str();
+        static string msg;
+        msg = "Error: Cannot delete " + elementType + "; component not found";
+        return msg.c_str();
     }
 };
 
@@ -143,6 +144,10 @@ public:
             : name(n), type(t), node1(n1), node2(n2) {}
 
     virtual ~CircuitElement() = default;
+
+//---------------------- Complex Gaussian solver ----------------------
+
+
 };
 
 //-----------------------------------------------------------------------------
@@ -405,10 +410,10 @@ public:
     // Custom move ctor/assign: re-open the file in the new object
     Signal(Signal&& other) noexcept
             : fileLocation(std::move(other.fileLocation)),
-            file(), chunkSize(other.chunkSize),
-    currentChunk(std::move(other.currentChunk)),
-    columnIndex(other.columnIndex),
-    dataStartPos(other.dataStartPos)
+              file(), chunkSize(other.chunkSize),
+              currentChunk(std::move(other.currentChunk)),
+              columnIndex(other.columnIndex),
+              dataStartPos(other.dataStartPos)
     {
         // Re-open stream based on fileLocation and seek to dataStartPos
         file.open(fileLocation);
@@ -518,6 +523,37 @@ private:
 //-----------------------------------------------------------------------------
 //   The main Circuit class: holds all elements, builds MNA matrices, does DC and transient solves.
 //-----------------------------------------------------------------------------
+class GaussianComplexSolver {
+public:
+    static bool solve(std::vector<std::vector<std::complex<double>>>& A,
+                      std::vector<std::complex<double>>& b,
+                      std::vector<std::complex<double>>& x) {
+        int n = (int)A.size();
+        x.assign(n, std::complex<double>(0.0, 0.0));
+        for (int k = 0; k < n; ++k) {
+            double maxMag = std::abs(A[k][k]);
+            int pivot = k;
+            for (int i = k + 1; i < n; ++i) {
+                double mag = std::abs(A[i][k]);
+                if (mag > maxMag) { maxMag = mag; pivot = i; }
+            }
+            if (maxMag < 1e-18) return false;
+            if (pivot != k) { std::swap(A[k], A[pivot]); std::swap(b[k], b[pivot]); }
+            for (int i = k + 1; i < n; ++i) {
+                std::complex<double> factor = A[i][k] / A[k][k];
+                b[i] -= factor * b[k];
+                for (int j = k; j < n; ++j) A[i][j] -= factor * A[k][j];
+            }
+        }
+        for (int i = n - 1; i >= 0; --i) {
+            std::complex<double> sum(0.0, 0.0);
+            for (int j = i + 1; j < n; ++j) sum += A[i][j] * x[j];
+            x[i] = (b[i] - sum) / A[i][i];
+        }
+        return true;
+    }
+};
+
 class Circuit {
 private:
     vector<CircuitElement*> elements;
@@ -550,6 +586,9 @@ public:
 
     // Given an integer “node”.  We reserve index “−1” for ground(0).
     // If node != 0 and not yet assigned, assign a new index.
+
+
+
     int getNodeIndex(int node) {
         if (node == 0) return -1;
         auto it = nodeIndex.find(node);
@@ -1179,6 +1218,12 @@ public:
         vsrc->voltage = originalVoltage;
     }
 
+    // AC sweep declaration
+    void solveACSweep(std::ofstream& out, const std::string& sourceName,
+                      double startFreq, double stopFreq, int numPoints,
+                      const std::string& sweepType, const std::vector<std::string>& vars);
+
+
 
 
     //----------------------------------------------------------------------------------------
@@ -1522,9 +1567,11 @@ public:
                          tStart(0), tStop(0), tStep(0), vScale(1.0), hScale(1.0), autoZoom(false) {}
 
     bool initialize() {
-        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-            cerr << "SDL could not initialize! Error: " << SDL_GetError() << endl;
-            return false;
+        if (SDL_WasInit(SDL_INIT_VIDEO) == 0) {
+            if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+                cerr << "SDL could not initialize! Error: " << SDL_GetError() << endl;
+                return false;
+            }
         }
 
         window = SDL_CreateWindow("Signal Visualizer",
@@ -1543,9 +1590,11 @@ public:
             return false;
         }
 
-        if (TTF_Init() == -1) {
-            cerr << "TTF could not initialize! Error: " << TTF_GetError() << endl;
-            return false;
+        if (TTF_WasInit() == 0) {
+            if (TTF_Init() == -1) {
+                cerr << "TTF could not initialize! Error: " << TTF_GetError() << endl;
+                return false;
+            }
         }
 
         font = TTF_OpenFont("arial.ttf", 16);
@@ -1566,6 +1615,9 @@ public:
 
         return true;
     }
+
+    double getVScale() const { return vScale; }
+    double getHScale() const { return hScale; }
 
     void setParameters(double start, double stop, double step, const string& signal) {
         tStart = start;
@@ -1851,6 +1903,9 @@ public:
         TTF_Quit();
     }
 };
+// Global visualizer instance
+SignalVisualizer visualizer;
+
 
 //-----------------------------------------------------------------------------
 //   Simple string utilities (trim + tokenize by whitespace)
@@ -2602,6 +2657,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+// Initialize the visualizer
+    if (!visualizer.initialize()) {
+        cerr << "Failed to initialize visualizer" << endl;
+        SDL_Quit();
+        return 1;
+    }
     // Create splash screen
     SDL_Window* splashWindow = SDL_CreateWindow("Circuits & Simulations", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 400, SDL_WINDOW_SHOWN);
     if (!splashWindow) {
@@ -2672,7 +2733,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Menu bar labels and sub-menus
-    vector<string> menuBarLabels = {"Simulation", "Node Library", "Node Name", "File", "Library", "Scope"};
+    vector<string> menuBarLabels = {"Simulation", "Node Library", "File", "Library", "Scope", "View"};
     Menu* simMenu = nullptr;
     Menu* nodeMenu = nullptr;
     Menu* fileMenu = nullptr;
@@ -2687,7 +2748,8 @@ int main(int argc, char* argv[]) {
     libMenu = new Menu(menuFont, guiWindow, {"Add Subcircuit", "Delete Subcircuit", "List Subcircuits"});
     scopeMenu = new Menu(menuFont, guiWindow, {"Select Signal", "Math on Signals", "Auto Zoom", "Cursors"});
     nameMenu = new Menu(menuFont, guiWindow, {"Set Node Name"});
-
+    Menu* viewMenu = new Menu(menuFont, guiWindow, {"Auto Zoom", "Zoom In Vertical", "Zoom Out Vertical",
+                                                    "Zoom In Horizontal", "Zoom Out Horizontal", "Reset Zoom"});
     int  simCurrent = -1;
     bool simNavVisible = false;
 
@@ -2895,6 +2957,7 @@ int main(int argc, char* argv[]) {
                 else if (activeMenu == 3 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
                 else if (activeMenu == 4 && libMenu)  selected = libMenu->handleEvent(guiEvent);
                 else if (activeMenu == 5 && scopeMenu)selected = scopeMenu->handleEvent(guiEvent);
+                else if (activeMenu == 5 && viewMenu) selected = viewMenu->handleEvent(guiEvent);
             }
 
             // Process selections
@@ -3130,9 +3193,7 @@ int main(int argc, char* argv[]) {
                     activeMenu = -1;
                     nodePaletteOpen = false;
 
-                    // Initialize signal visualizer
-                    SignalVisualizer visualizer;
-
+                    // Set parameters for the visualizer
                     visualizer.setParameters(t0, t1, maxTimeStep, nodeToPlot);
 
                     // Run transient simulation and capture the signal
@@ -3150,6 +3211,28 @@ int main(int argc, char* argv[]) {
                     visualizer.addSignal(voltageValues, nodeToPlot);
                     visualizer.handleEvents();
                 }
+            }
+            if (selected != -1 && activeMenu == 5) {
+                if (selected == 0) {  // Auto Zoom
+                    visualizer.setAutoZoom(true);
+                } else if (selected == 1) {  // Zoom In Vertical
+                    visualizer.setVScale(visualizer.getVScale() * 0.8);
+                    visualizer.setAutoZoom(false);
+                } else if (selected == 2) {  // Zoom Out Vertical
+                    visualizer.setVScale(visualizer.getVScale() * 1.2);
+                    visualizer.setAutoZoom(false);
+                } else if (selected == 3) {  // Zoom In Horizontal
+                    visualizer.setHScale(visualizer.getHScale() * 0.8);
+                    visualizer.setAutoZoom(false);
+                } else if (selected == 4) {  // Zoom Out Horizontal
+                    visualizer.setHScale(visualizer.getHScale() * 1.2);
+                    visualizer.setAutoZoom(false);
+                } else if (selected == 5) {  // Reset Zoom
+                    visualizer.setVScale(1.0);
+                    visualizer.setHScale(1.0);
+                    visualizer.setAutoZoom(false);
+                }
+                activeMenu = -1;
             }
             if (selected != -1 && activeMenu == 2) {
                 if (selected == 0) {  // Load Schematic
@@ -3175,7 +3258,9 @@ int main(int argc, char* argv[]) {
                         }
                         netin.close();
                     }
-                } else if (selected == 1) {  // Save Schematic
+                }
+
+                else if (selected == 1) {  // Save Schematic
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
                     SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter file name:", {0, 0, 0, 255});
@@ -3303,6 +3388,7 @@ int main(int argc, char* argv[]) {
                     SDL_Delay(1000);
                 }
             }
+
             if (selected != -1) activeMenu = -1;  // Close menu after selection
 
             // PALETTE CLICK HANDLER — when the palette panel is open, pick an element type
@@ -4047,4 +4133,261 @@ int main(int argc, char* argv[]) {
     SDL_Quit();
 
     return 0;
+}
+
+
+// Implementation of solveACSweep outside Circuit class
+void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
+                           double startFreq, double stopFreq, int numPoints,
+                           const std::string& sweepType, const std::vector<std::string>& vars) {
+    // Find the AC voltage source
+    CircuitElement* src = findElement(sourceName);
+    if (!src || src->type != VSOURCE) {
+        out << "ERROR: AC Voltage source '" << sourceName << "' not found.\n";
+        return;
+    }
+    auto* vsrc = static_cast<VoltageSource*>(src);
+    double originalVoltage = vsrc->voltage; // amplitude stored here
+
+    // Get DC operating point to linearize diodes (small-signal conductance)
+    std::vector<double> dcVolt;
+    if (!solveDC(dcVolt, out)) {
+        out << "Warning: DC operating point failed - AC linearization for diodes may be incorrect\n";
+    }
+
+    struct FrozenDiode { int i1, i2; double Gd; };
+    std::vector<FrozenDiode> frozenDiodes;
+    for (auto e : elements) {
+        if (e->type != DIODE) continue;
+        auto d = static_cast<Diode*>(e);
+        int i1 = (d->node1==0 ? -1 : nodeIndex[d->node1]);
+        int i2 = (d->node2==0 ? -1 : nodeIndex[d->node2]);
+        double Va = 0.0, Vb = 0.0;
+        if (d->node1 < (int)dcVolt.size()) Va = dcVolt[d->node1];
+        if (d->node2 < (int)dcVolt.size()) Vb = dcVolt[d->node2];
+        double Vd = Va - Vb;
+        double expo = exp(Vd / (d->emissionCoeff * d->thermalVoltage));
+        double Gd = (d->saturationCurrent / (d->emissionCoeff * d->thermalVoltage)) * expo;
+        frozenDiodes.push_back({ i1, i2, Gd });
+    }
+
+    // Build frequency vector (Hz)
+    std::vector<double> freqs;
+    if (numPoints <= 1) {
+        freqs.push_back(startFreq);
+    } else {
+        std::string st = sweepType;
+        // lower-case
+        for (auto &c : st) c = std::tolower(c);
+        if (st == "decade" || st == "log" || st == "octave") {
+            double f1 = startFreq, f2 = stopFreq;
+            if (f1 <= 0.0 || f2 <= 0.0) {
+                out << "ERROR: Log sweep requires positive start/stop frequencies\n";
+                return;
+            }
+            double log1 = log10(f1), log2 = log10(f2);
+            for (int k = 0; k < numPoints; ++k) {
+                double frac = double(k) / double(numPoints - 1);
+                double val = pow(10.0, log1 + frac * (log2 - log1));
+                freqs.push_back(val);
+            }
+        } else {
+            // linear
+            for (int k = 0; k < numPoints; ++k) {
+                double val = startFreq + (stopFreq - startFreq) * double(k) / double(std::max(1, numPoints - 1));
+                freqs.push_back(val);
+            }
+        }
+    }
+
+    // Header
+    out << "Freq";
+    for (const auto& var : vars) {
+        out << "\t" << var << "_mag\t" << var << "_phase_deg";
+    }
+    out << "\n";
+
+    int N = nodeCount; // number of non-zero nodes
+    // map voltage sources to branch indices
+    std::map<CircuitElement*,int> vsBranch;
+    int numVS = 0;
+    for (auto e : elements) {
+        if (e->type == VSOURCE) vsBranch[e] = numVS++;
+    }
+    int M = numVS;
+    int dim = N + M;
+
+    // branchElements by index
+    std::vector<CircuitElement*> branchElements(M, nullptr);
+    for (auto &kv : vsBranch) branchElements[kv.second] = kv.first;
+
+    // For each frequency assemble complex MNA
+    for (double f : freqs) {
+        double omega = 2.0 * M_PI * f;
+        std::complex<double> j(0.0, 1.0);
+
+        std::vector<std::vector<std::complex<double>>> A(dim, std::vector<std::complex<double>>(dim, std::complex<double>(0.0,0.0)));
+        std::vector<std::complex<double>> b(dim, std::complex<double>(0.0,0.0));
+
+        auto idxN = [&](int node)->int { return (node==0 ? -1 : nodeIndex[node]); };
+
+        for (auto e : elements) {
+            int n1 = e->node1, n2 = e->node2;
+            int i1 = idxN(n1), i2 = idxN(n2);
+
+            switch (e->type) {
+                case RESISTOR: {
+                    double G = 1.0 / static_cast<Resistor*>(e)->resistance;
+                    std::complex<double> Y(G, 0.0);
+                    if (i1>=0) A[i1][i1] += Y;
+                    if (i2>=0) A[i2][i2] += Y;
+                    if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
+                    break;
+                }
+                case CAPACITOR: {
+                    double C = static_cast<Capacitor*>(e)->capacitance;
+                    std::complex<double> Y = j * omega * C; // jωC
+                    if (i1>=0) A[i1][i1] += Y;
+                    if (i2>=0) A[i2][i2] += Y;
+                    if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
+                    break;
+                }
+                case INDUCTOR: {
+                    double L = static_cast<Inductor*>(e)->inductance;
+                    if (omega == 0.0) {
+                        std::complex<double> Y(1e12, 0.0);
+                        if (i1>=0) A[i1][i1] += Y;
+                        if (i2>=0) A[i2][i2] += Y;
+                        if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
+                    } else {
+                        std::complex<double> Y = 1.0 / (j * omega * L);
+                        if (i1>=0) A[i1][i1] += Y;
+                        if (i2>=0) A[i2][i2] += Y;
+                        if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
+                    }
+                    break;
+                }
+                case ISOURCE: {
+                    // AC current sources not implemented; assume zero AC contribution.
+                    break;
+                }
+                case VSOURCE: {
+                    int idxB = vsBranch[e];
+                    if (i1>=0) { A[i1][N + idxB] += std::complex<double>(1.0,0.0); A[N + idxB][i1] += std::complex<double>(1.0,0.0); }
+                    if (i2>=0) { A[i2][N + idxB] += std::complex<double>(-1.0,0.0); A[N + idxB][i2] += std::complex<double>(-1.0,0.0); }
+                    // Put source phasor (assume 0° phase) in RHS
+                    b[N + idxB] = std::complex<double>(vsrc->voltage, 0.0);
+                    break;
+                }
+                case GROUND: {
+                    if (i1 >= 0) {
+                        for (int k = 0; k < dim; ++k) { A[i1][k] = std::complex<double>(0.0,0.0); A[k][i1] = std::complex<double>(0.0,0.0); }
+                        A[i1][i1] = std::complex<double>(1.0,0.0);
+                        b[i1] = std::complex<double>(0.0,0.0);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        } // end stamp elements
+
+        // Stamp frozen diode conductances
+        for (auto &fd : frozenDiodes) {
+            int i1 = fd.i1, i2 = fd.i2;
+            std::complex<double> Gd(fd.Gd, 0.0);
+            if (i1>=0) A[i1][i1] += Gd;
+            if (i2>=0) A[i2][i2] += Gd;
+            if (i1>=0 && i2>=0) { A[i1][i2] -= Gd; A[i2][i1] -= Gd; }
+        }
+
+        // Solve
+        std::vector<std::complex<double>> x(dim, std::complex<double>(0.0,0.0));
+        if (!GaussianComplexSolver::solve(A, b, x)) {
+            out << "Warning: AC solve singular at f=" << f << "\n";
+            out << f;
+            for (size_t k=0;k<vars.size();++k) out << "\t0\t0";
+            out << "\n";
+            continue;
+        }
+
+        // Output results
+        out << f;
+        for (const auto& var : vars) {
+            if (var.size() >= 3 && var[0] == 'V') {
+                std::string nodeName = var.substr(2, var.size()-3);
+                if (nameToNode.find(nodeName) == nameToNode.end()) {
+                    out << "\t0\t0";
+                } else {
+                    int nodeNum = nameToNode[nodeName];
+                    if (nodeIndex.find(nodeNum) == nodeIndex.end()) {
+                        // Ground or missing node
+                        if (nodeNum == 0) { out << "\t0\t0"; }
+                        else out << "\t0\t0";
+                    } else {
+                        int idx = nodeIndex[nodeNum];
+                        std::complex<double> Vc = x[idx];
+                        double mag = std::abs(Vc);
+                        double phase = std::arg(Vc) * 180.0 / M_PI;
+                        out << "\t" << mag << "\t" << phase;
+                    }
+                }
+            } else if (var.size() >= 3 && var[0] == 'I') {
+                std::string compName = var.substr(2, var.size()-3);
+                CircuitElement* elem = findElement(compName);
+                if (!elem) {
+                    out << "\t0\t0";
+                } else if (elem->type == RESISTOR) {
+                    auto r = static_cast<Resistor*>(elem);
+                    int i1 = (r->node1==0 ? -1 : nodeIndex[r->node1]);
+                    int i2 = (r->node2==0 ? -1 : nodeIndex[r->node2]);
+                    std::complex<double> V1 = (i1>=0 ? x[i1] : std::complex<double>(0.0,0.0));
+                    std::complex<double> V2 = (i2>=0 ? x[i2] : std::complex<double>(0.0,0.0));
+                    std::complex<double> I = (V1 - V2) / r->resistance;
+                    double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                    out << "\t" << mag << "\t" << phase;
+                } else if (elem->type == CAPACITOR) {
+                    auto c = static_cast<Capacitor*>(elem);
+                    int i1 = (c->node1==0 ? -1 : nodeIndex[c->node1]);
+                    int i2 = (c->node2==0 ? -1 : nodeIndex[c->node2]);
+                    std::complex<double> V1 = (i1>=0 ? x[i1] : std::complex<double>(0.0,0.0));
+                    std::complex<double> V2 = (i2>=0 ? x[i2] : std::complex<double>(0.0,0.0));
+                    std::complex<double> I = std::complex<double>(0.0,1.0) * omega * c->capacitance * (V1 - V2);
+                    double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                    out << "\t" << mag << "\t" << phase;
+                } else if (elem->type == INDUCTOR) {
+                    auto l = static_cast<Inductor*>(elem);
+                    int i1 = (l->node1==0 ? -1 : nodeIndex[l->node1]);
+                    int i2 = (l->node2==0 ? -1 : nodeIndex[l->node2]);
+                    std::complex<double> V1 = (i1>=0 ? x[i1] : std::complex<double>(0.0,0.0));
+                    std::complex<double> V2 = (i2>=0 ? x[i2] : std::complex<double>(0.0,0.0));
+                    std::complex<double> I;
+                    if (omega == 0.0) I = std::complex<double>(0.0,0.0);
+                    else I = (V1 - V2) / (std::complex<double>(0.0,1.0) * omega * l->inductance);
+                    double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                    out << "\t" << mag << "\t" << phase;
+                } else if (elem->type == VSOURCE) {
+                    // find branch index
+                    int found = -1;
+                    for (int bi=0; bi<M; ++bi) {
+                        if (branchElements[bi] && branchElements[bi]->name == compName) { found = bi; break; }
+                    }
+                    if (found == -1) out << "\t0\t0";
+                    else {
+                        std::complex<double> I = x[N + found];
+                        double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                        out << "\t" << mag << "\t" << phase;
+                    }
+                } else {
+                    out << "\t0\t0";
+                }
+            } else {
+                out << "\t0\t0";
+            }
+        } // vars
+        out << "\n";
+    } // freqs loop
+
+    // restore original DC amplitude
+    vsrc->voltage = originalVoltage;
 }
