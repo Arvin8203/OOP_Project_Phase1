@@ -74,7 +74,7 @@ public:
     NameException() : msg("Error: Element not found in library") {}
 
     const char* what() const noexcept override {
-        return msg.c_str();
+            return msg.c_str();
     }
 };
 
@@ -84,28 +84,28 @@ private:
 public:
     ValueException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        if (elementType == "resistor") {
-            return "Error: Resistance cannot be zero or negative";
-        } else if (elementType == "capacitor") {
-            return "Error: Capacitance cannot be zero or negative";
-        } else if (elementType == "inductor") {
-            return "Error: Inductance cannot be zero or negative";
-        }
-        return "Error: Invalid value";
+            if (elementType == "resistor") {
+                return "Error: Resistance cannot be zero or negative";
+            } else if (elementType == "capacitor") {
+                return "Error: Capacitance cannot be zero or negative";
+            } else if (elementType == "inductor") {
+                return "Error: Inductance cannot be zero or negative";
+            }
+            return "Error: Invalid value";
     }
 };
 
 class SyntaxException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Syntax error";
+            return "Error: Syntax error";
     }
 };
 
 class ModelException : public exception {
 public:
     const char* what() const noexcept override {
-        return "Error: Model not found in library";
+            return "Error: Model not found in library";
     }
 };
 
@@ -116,9 +116,9 @@ private:
 public:
     DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+            return msg.c_str();
     }
 };
 
@@ -128,9 +128,9 @@ private:
 public:
     NotFoundException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-        static string msg;
-        msg = "Error: Cannot delete " + elementType + "; component not found";
-        return msg.c_str();
+            static string msg;
+            msg = "Error: Cannot delete " + elementType + "; component not found";
+            return msg.c_str();
     }
 };
 
@@ -144,10 +144,6 @@ public:
             : name(n), type(t), node1(n1), node2(n2) {}
 
     virtual ~CircuitElement() = default;
-
-//---------------------- Complex Gaussian solver ----------------------
-
-
 };
 
 //-----------------------------------------------------------------------------
@@ -409,11 +405,11 @@ public:
 
     // Custom move ctor/assign: re-open the file in the new object
     Signal(Signal&& other) noexcept
-            : fileLocation(std::move(other.fileLocation)),
-              file(), chunkSize(other.chunkSize),
-              currentChunk(std::move(other.currentChunk)),
-              columnIndex(other.columnIndex),
-              dataStartPos(other.dataStartPos)
+            : fileLocation(move(other.fileLocation)),
+            file(), chunkSize(other.chunkSize),
+    currentChunk(move(other.currentChunk)),
+    columnIndex(other.columnIndex),
+    dataStartPos(other.dataStartPos)
     {
         // Re-open stream based on fileLocation and seek to dataStartPos
         file.open(fileLocation);
@@ -425,9 +421,9 @@ public:
     Signal& operator=(Signal&& other) noexcept {
         if (this != &other) {
             if (file.is_open()) file.close();
-            fileLocation  = std::move(other.fileLocation);
+            fileLocation  =move(other.fileLocation);
             chunkSize     = other.chunkSize;
-            currentChunk  = std::move(other.currentChunk);
+            currentChunk  =move(other.currentChunk);
             columnIndex   = other.columnIndex;
             dataStartPos  = other.dataStartPos;
 
@@ -525,28 +521,28 @@ private:
 //-----------------------------------------------------------------------------
 class GaussianComplexSolver {
 public:
-    static bool solve(std::vector<std::vector<std::complex<double>>>& A,
-                      std::vector<std::complex<double>>& b,
-                      std::vector<std::complex<double>>& x) {
+    static bool solve( vector< vector< complex<double>>>& A,
+                       vector< complex<double>>& b,
+                       vector< complex<double>>& x) {
         int n = (int)A.size();
-        x.assign(n, std::complex<double>(0.0, 0.0));
+        x.assign(n,complex<double>(0.0, 0.0));
         for (int k = 0; k < n; ++k) {
-            double maxMag = std::abs(A[k][k]);
+            double maxMag =abs(A[k][k]);
             int pivot = k;
             for (int i = k + 1; i < n; ++i) {
-                double mag = std::abs(A[i][k]);
+                double mag =abs(A[i][k]);
                 if (mag > maxMag) { maxMag = mag; pivot = i; }
             }
             if (maxMag < 1e-18) return false;
-            if (pivot != k) { std::swap(A[k], A[pivot]); std::swap(b[k], b[pivot]); }
+            if (pivot != k) {swap(A[k], A[pivot]);swap(b[k], b[pivot]); }
             for (int i = k + 1; i < n; ++i) {
-                std::complex<double> factor = A[i][k] / A[k][k];
+                complex<double> factor = A[i][k] / A[k][k];
                 b[i] -= factor * b[k];
                 for (int j = k; j < n; ++j) A[i][j] -= factor * A[k][j];
             }
         }
         for (int i = n - 1; i >= 0; --i) {
-            std::complex<double> sum(0.0, 0.0);
+            complex<double> sum(0.0, 0.0);
             for (int j = i + 1; j < n; ++j) sum += A[i][j] * x[j];
             x[i] = (b[i] - sum) / A[i][i];
         }
@@ -586,9 +582,6 @@ public:
 
     // Given an integer “node”.  We reserve index “−1” for ground(0).
     // If node != 0 and not yet assigned, assign a new index.
-
-
-
     int getNodeIndex(int node) {
         if (node == 0) return -1;
         auto it = nodeIndex.find(node);
@@ -1219,12 +1212,9 @@ public:
     }
 
     // AC sweep declaration
-    void solveACSweep(std::ofstream& out, const std::string& sourceName,
-                      double startFreq, double stopFreq, int numPoints,
-                      const std::string& sweepType, const std::vector<std::string>& vars);
-
-
-
+    void solveACSweep( ofstream& out, const string& sourceName,
+                       double startFreq, double stopFreq, int numPoints,
+                       const string& sweepType, const vector<string>& vars);
 
     //----------------------------------------------------------------------------------------
     //   Transient simulation (Backward Euler or Trapezoidal halfway).  We do not re‐solve
@@ -1616,9 +1606,6 @@ public:
         return true;
     }
 
-    double getVScale() const { return vScale; }
-    double getHScale() const { return hScale; }
-
     void setParameters(double start, double stop, double step, const string& signal) {
         tStart = start;
         tStop = stop;
@@ -1661,6 +1648,8 @@ public:
     void setVScale(double scale) { vScale = scale; }
     void setHScale(double scale) { hScale = scale; }
     void setAutoZoom(bool enable) { autoZoom = enable; }
+    double getVScale() const { return vScale; }
+    double getHScale() const { return hScale; }
 
     void drawGrid() {
         SDL_SetRenderDrawColor(renderer, 220, 220, 220, 255);
@@ -1903,9 +1892,6 @@ public:
         TTF_Quit();
     }
 };
-// Global visualizer instance
-SignalVisualizer visualizer;
-
 
 //-----------------------------------------------------------------------------
 //   Simple string utilities (trim + tokenize by whitespace)
@@ -1916,6 +1902,9 @@ static inline string trim(const string& s) {
     size_t j = s.find_last_not_of(" \t\r\n");
     return s.substr(i, j - i + 1);
 }
+
+// Global visualizer instance
+SignalVisualizer visualizer;
 
 static inline vector<string> tokenize(const string& line) {
     vector<string> tok;
@@ -2657,12 +2646,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-// Initialize the visualizer
+    // Initialize the visualizer
     if (!visualizer.initialize()) {
         cerr << "Failed to initialize visualizer" << endl;
         SDL_Quit();
         return 1;
     }
+
     // Create splash screen
     SDL_Window* splashWindow = SDL_CreateWindow("Circuits & Simulations", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 400, SDL_WINDOW_SHOWN);
     if (!splashWindow) {
@@ -2733,14 +2723,14 @@ int main(int argc, char* argv[]) {
     }
 
     // Menu bar labels and sub-menus
-    vector<string> menuBarLabels = {"Simulation", "Node Library", "File", "Library", "Scope", "View"};
+    vector<string> menuBarLabels = {"Simulation", "Node Library", "File", "Library", "Scope", "Node Name", "View"};
     Menu* simMenu = nullptr;
     Menu* nodeMenu = nullptr;
     Menu* fileMenu = nullptr;
     Menu* libMenu = nullptr;
     Menu* scopeMenu = nullptr;
     Menu* nameMenu = nullptr;
-
+    Menu* viewMenu = nullptr;
 
     simMenu = new Menu(menuFont, guiWindow, {"Set Transient Params", "Set AC Sweep", "Set Phase Sweep", "Plot Signal"});
     nodeMenu = new Menu(menuFont, guiWindow, {"Resistor", "Capacitor", "Inductor", "Diode", "Voltage Source", "Current Source", "Ground", "Delete Element", "Clear Circuit"});
@@ -2748,8 +2738,8 @@ int main(int argc, char* argv[]) {
     libMenu = new Menu(menuFont, guiWindow, {"Add Subcircuit", "Delete Subcircuit", "List Subcircuits"});
     scopeMenu = new Menu(menuFont, guiWindow, {"Select Signal", "Math on Signals", "Auto Zoom", "Cursors"});
     nameMenu = new Menu(menuFont, guiWindow, {"Set Node Name"});
-    Menu* viewMenu = new Menu(menuFont, guiWindow, {"Auto Zoom", "Zoom In Vertical", "Zoom Out Vertical",
-                                                    "Zoom In Horizontal", "Zoom Out Horizontal", "Reset Zoom"});
+    viewMenu = new Menu(menuFont, guiWindow, {"Auto Zoom", "Zoom In Vertical", "Zoom Out Vertical",
+                                              "Zoom In Horizontal", "Zoom Out Horizontal", "Reset Zoom"});
     int  simCurrent = -1;
     bool simNavVisible = false;
 
@@ -2823,8 +2813,22 @@ int main(int argc, char* argv[]) {
     string               filesActiveName;
     vector<string>  filesActiveLines;
     int    filesScroll = 0;
-    SDL_Rect filesCloseRect = {0,0,0,0};
 
+    // --- NodeName panel & labels ---
+    struct NodeLabel { int x, y; string text; };
+    vector<NodeLabel> nodeLabels;
+
+    bool nodeNamePanelOpen = false;
+    SDL_Rect nodeNamePanel{740, 50, 300, 140};   // x,y,w,h
+    SDL_Rect nnInputRect{0,0,0,0}, nnPlusRect{0,0,0,0}, nnMinusRect{0,0,0,0}, nnDoneRect{0,0,0,0};
+    string nnText;
+    bool placingNodeLabel = false;
+    string pendingNodeLabel;
+
+    SDL_Rect filesCloseRect = {0,0,0,0};
+    // --- Context 'Delete' popup state ---
+    int      ctxTargetElem    = -1;   // index in visuals
+    int      ctxTargetWire    = -1;   // index in wires
     bool     ctxDeleteTargetIsWire = false;
     int      ctxDeleteElemIndex    = -1;
     int      ctxDeleteWireIndex    = -1;
@@ -2893,37 +2897,13 @@ int main(int argc, char* argv[]) {
                 continue; // consume event
             }
 
-            bool consumedLeftDown = false; // set true when a left-click is used by wire handling
-
-            // If delete-popup is visible, consume left-click on it
-            if (ctxDeleteVisible &&
-                guiEvent.type == SDL_MOUSEBUTTONDOWN &&
-                guiEvent.button.button == SDL_BUTTON_LEFT) {
-                int mx = guiEvent.button.x, my = guiEvent.button.y;
-                if (mx >= ctxDeleteRect.x && mx <= ctxDeleteRect.x + ctxDeleteRect.w &&
-                    my >= ctxDeleteRect.y && my <= ctxDeleteRect.y + ctxDeleteRect.h) {
-                    // perform deletion
-                    if (ctxTarget == CtxTarget::Element && ctxTargetIdx >= 0 && ctxTargetIdx < (int)visuals.size()) {
-                        int dead = ctxTargetIdx;
-                        // remove wires touching this element
-                        wires.erase(std::remove_if(wires.begin(), wires.end(),
-                                                   [&](const Wire& w){ return w.aElem==dead || w.bElem==dead; }), wires.end());
-                        // reindex wires after erasing the element
-                        for (auto& w : wires) {
-                            if (w.aElem > dead) --w.aElem;
-                            if (w.bElem > dead) --w.bElem;
-                        }
-                        visuals.erase(visuals.begin()+dead);
-                    } else if (ctxTarget == CtxTarget::Wire && ctxTargetIdx >= 0 && ctxTargetIdx < (int)wires.size()) {
-                        wires.erase(wires.begin()+ctxTargetIdx);
-                    }
-                    ctxDeleteVisible = false; ctxTarget = CtxTarget::None; ctxTargetIdx = -1;
-                    continue; // consume this click
-                } else {
-                    // click outside -> hide popup
-                    ctxDeleteVisible = false; ctxTarget = CtxTarget::None; ctxTargetIdx = -1;
-                }
+            // ---- Z/D hotkeys: pick diode type AND enter placement ----
+            if (guiEvent.type == SDL_KEYDOWN) {
+                if (guiEvent.key.keysym.sym == SDLK_z) { pendingDiode = "Z"; selectedElement = "D"; placementMode = true; nodePaletteOpen = false; }
+                else if (guiEvent.key.keysym.sym == SDLK_d) { pendingDiode = "D"; selectedElement = "D"; placementMode = true; nodePaletteOpen = false; }
             }
+
+            bool consumedLeftDown = false; // set true when a left-click is used by wire handling
 
             // Handle top menu bar clicks
             /* 1) LEFT-CLICK selects "Node Library"
@@ -2936,6 +2916,10 @@ int main(int argc, char* argv[]) {
                         if (idx == 1) { // index 1 == "Node Library"
                             nodePaletteOpen = true;
                             activeMenu = -1;   // close dropdowns
+                        } else if (menuBarLabels[idx] == "Node Name") {
+                            nodePaletteOpen = false;
+                            nodeNamePanelOpen = true;
+                            activeMenu = -1;
                         } else {
                             nodePaletteOpen = false;
                             activeMenu = idx;
@@ -2953,11 +2937,11 @@ int main(int argc, char* argv[]) {
             if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.y >= 40) {
                 if (activeMenu == 0 && simMenu)       selected = simMenu->handleEvent(guiEvent);
                 else if (activeMenu == 1 && nodeMenu) selected = nodeMenu->handleEvent(guiEvent);
-                else if (activeMenu == 2 && nameMenu) selected = nameMenu->handleEvent(guiEvent);
-                else if (activeMenu == 3 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
-                else if (activeMenu == 4 && libMenu)  selected = libMenu->handleEvent(guiEvent);
-                else if (activeMenu == 5 && scopeMenu)selected = scopeMenu->handleEvent(guiEvent);
-                else if (activeMenu == 5 && viewMenu) selected = viewMenu->handleEvent(guiEvent);
+                else if (activeMenu == 2 && fileMenu) selected = fileMenu->handleEvent(guiEvent);
+                else if (activeMenu == 3 && libMenu)  selected = libMenu->handleEvent(guiEvent);
+                else if (activeMenu == 4 && scopeMenu)selected = scopeMenu->handleEvent(guiEvent);
+                else if (activeMenu == 5 && nameMenu) selected = nameMenu->handleEvent(guiEvent);
+                else if (activeMenu == 6 && viewMenu) selected = viewMenu->handleEvent(guiEvent);
             }
 
             // Process selections
@@ -3193,7 +3177,9 @@ int main(int argc, char* argv[]) {
                     activeMenu = -1;
                     nodePaletteOpen = false;
 
-                    // Set parameters for the visualizer
+                    // Initialize signal visualizer
+                    SignalVisualizer visualizer;
+
                     visualizer.setParameters(t0, t1, maxTimeStep, nodeToPlot);
 
                     // Run transient simulation and capture the signal
@@ -3212,7 +3198,7 @@ int main(int argc, char* argv[]) {
                     visualizer.handleEvents();
                 }
             }
-            if (selected != -1 && activeMenu == 5) {
+            if (selected != -1 && activeMenu == 6) {
                 if (selected == 0) {  // Auto Zoom
                     visualizer.setAutoZoom(true);
                 } else if (selected == 1) {  // Zoom In Vertical
@@ -3258,9 +3244,7 @@ int main(int argc, char* argv[]) {
                         }
                         netin.close();
                     }
-                }
-
-                else if (selected == 1) {  // Save Schematic
+                } else if (selected == 1) {  // Save Schematic
                     SDL_Surface* guiSurface = SDL_GetWindowSurface(guiWindow);
                     SDL_FillRect(guiSurface, NULL, SDL_MapRGB(guiSurface->format, 255, 255, 255));
                     SDL_Surface* prompt = TTF_RenderText_Solid(menuFont, "Enter file name:", {0, 0, 0, 255});
@@ -3388,7 +3372,6 @@ int main(int argc, char* argv[]) {
                     SDL_Delay(1000);
                 }
             }
-
             if (selected != -1) activeMenu = -1;  // Close menu after selection
 
             // PALETTE CLICK HANDLER — when the palette panel is open, pick an element type
@@ -3416,6 +3399,44 @@ int main(int argc, char* argv[]) {
                                       ? max(0, (int)filesActiveLines.size() - 1)
                                       : max(0, (int)filesPanelList.size()  - 1);
                         break;
+                }
+            }
+
+            // (A) Handle click on the small red 'Delete' popup (if open)
+            if (ctxDeleteVisible && guiEvent.type == SDL_MOUSEBUTTONDOWN
+                && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                if (mx >= ctxDeleteRect.x && mx <= ctxDeleteRect.x + ctxDeleteRect.w &&
+                    my >= ctxDeleteRect.y && my <= ctxDeleteRect.y + ctxDeleteRect.h) {
+
+                    // Delete a wire?
+                    if (ctxTargetWire != -1 && ctxTargetWire < (int)wires.size()) {
+                        wires.erase(wires.begin() + ctxTargetWire);
+                    }
+                        // Delete a component?
+                    else if (ctxTargetElem != -1 && ctxTargetElem < (int)visuals.size()) {
+                        // 1) remove wires attached to this element
+                        wires.erase(remove_if(wires.begin(), wires.end(),
+                                              [&](const Wire& w){
+                                                  return (w.aElem == ctxTargetElem || w.bElem == ctxTargetElem);
+                                              }), wires.end());
+                        // 2) fix indices in remaining wires
+                        for (auto& w : wires) {
+                            if (w.aElem > ctxTargetElem) --w.aElem;
+                            if (w.bElem > ctxTargetElem) --w.bElem;
+                        }
+                        // 3) remove the visual rectangle itself
+                        visuals.erase(visuals.begin() + ctxTargetElem);
+                    }
+
+                    // close popup & consume the click
+                    ctxDeleteVisible = false;
+                    ctxTargetWire = ctxTargetElem = -1;
+                    continue;
+                } else {
+                    // clicked elsewhere: hide popup
+                    ctxDeleteVisible = false;
+                    ctxTargetWire = ctxTargetElem = -1;
                 }
             }
 
@@ -3477,7 +3498,7 @@ int main(int argc, char* argv[]) {
 
                         SDL_UpdateWindowSurface(guiWindow);
 
-                        int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 370;
+                        int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 460;
                         valuePromptBox = { PAL_X + 20, PAL_Y + PAL_H - 60, PAL_W - 40, 36 };
 
                         // Special prompt for diode: ask "D" or "Z"
@@ -3485,9 +3506,9 @@ int main(int argc, char* argv[]) {
                             valuePromptMsg = "Type 'D' (diode) or 'Z' (Zener):";
                             valuePromptOpen = true;
                             SDL_UpdateWindowSurface(guiWindow);
-                            int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 370;
+                            int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 460;
                             valuePromptBox = { PAL_X + 20, PAL_Y + PAL_H - 60, PAL_W - 40, 36 };
-                            std::string sDZ = TextInput(guiWindow, menuFont, valuePromptBox.x + 8, valuePromptBox.y + 8);
+                            string sDZ = TextInput(guiWindow, menuFont, valuePromptBox.x + 8, valuePromptBox.y + 8);
                             if (!sDZ.empty() && (sDZ[0]=='Z' || sDZ[0]=='z')) pendingDiode = "Z";
                             else pendingDiode = "D";
                         }
@@ -3587,6 +3608,95 @@ int main(int argc, char* argv[]) {
                 float projx = x1 + t*vx, projy = y1 + t*vy;
                 return hypotf(px - projx, py - projy);
             };
+
+            // (B) Open 'Delete' popup with RIGHT click on a component or wire
+            if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_RIGHT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                ctxDeleteVisible = false;
+                ctxTargetElem = -1;
+                ctxTargetWire = -1;
+
+                // First try components (top-most first)
+                for (int i = (int)visuals.size() - 1; i >= 0; --i) {
+                    SDL_Rect r { visuals[i].cx - visuals[i].w/2,
+                                 visuals[i].cy - visuals[i].h/2,
+                                 visuals[i].w, visuals[i].h };
+                    if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+                        ctxTargetElem = i;
+                        break;
+                    }
+                }
+
+                // If not a component, try wires (bend handle or segments)
+                if (ctxTargetElem == -1) {
+                    const float TH = 8.0f;
+                    for (int wi = (int)wires.size() - 1; wi >= 0; --wi) {
+                        int ax, ay, bx, by;
+                        getTerminalPos(visuals[wires[wi].aElem], wires[wi].aTerm, ax, ay);
+                        getTerminalPos(visuals[wires[wi].bElem], wires[wi].bTerm, bx, by);
+                        int mx0 = wires[wi].midx, my0 = wires[wi].midy;
+
+                        if (hypotf(mx - mx0, my - my0) <= TH) { ctxTargetWire = wi; break; }
+                        float d1 = distToSeg(mx, my, ax, ay, mx0, my0);
+                        float d2 = distToSeg(mx, my, mx0, my0, bx, by);
+                        if (min(d1, d2) <= TH) { ctxTargetWire = wi; break; }
+                    }
+                }
+
+                // Show popup if we have any target
+                if (ctxTargetElem != -1 || ctxTargetWire != -1) {
+                    const int W = 90, H = 28;
+                    ctxDeleteRect = { mx + 8, my + 8, W, H };
+                    ctxDeleteVisible = true;
+                }
+            }
+
+            // --- Node Name panel clicks/typing ---
+            if (nodeNamePanelOpen && guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                auto inside = [&](const SDL_Rect& r){ return mx>=r.x && mx<=r.x+r.w && my>=r.y && my<=r.y+r.h; };
+                if (inside(nnPlusRect)) {
+                    pendingNodeLabel = "+";
+                    placingNodeLabel = true;
+                    nodeNamePanelOpen = false;
+                } else if (inside(nnMinusRect)) {
+                    pendingNodeLabel = "-";
+                    placingNodeLabel = true;
+                    nodeNamePanelOpen = false;
+                } else if (inside(nnDoneRect)) {
+                    if (!nnText.empty()) {
+                        pendingNodeLabel = nnText;
+                        placingNodeLabel = true;
+                    }
+                    nodeNamePanelOpen = false;
+                } else if (inside(nnInputRect)) {
+                    nnText = TextInput(guiWindow, menuFont, nnInputRect.x + 8, nnInputRect.y + 8);
+                }
+            }
+
+// در حالت قراردهی برچسب نود، با کلیک روی وایر، برچسب را بچسبان
+            if (placingNodeLabel && guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT) {
+                int mx = guiEvent.button.x, my = guiEvent.button.y;
+                bool ok = false;
+                const float TH = 8.0f;
+
+                auto termPos = [&](const VisualElement& v, int term, int& tx, int& ty){
+                    SDL_Rect rect{ v.cx - v.w/2, v.cy - v.h/2, v.w, v.h };
+                    if (v.typeKey=="G") { tx=v.cx; ty=rect.y; return; }
+                    if (term==0){ tx=rect.x; ty=v.cy; } else { tx=rect.x+rect.w; ty=v.cy; }
+                };
+
+                for (const auto& w : wires) {
+                    int sx, sy, ex, ey;
+                    termPos(visuals[w.aElem], w.aTerm, sx, sy);
+                    termPos(visuals[w.bElem], w.bTerm, ex, ey);
+                    float d1 = distToSeg(mx, my, sx, sy, w.hasMid? w.midx : ex, w.hasMid? w.midy : ey);
+                    float d2 = w.hasMid? distToSeg(mx, my, w.midx, w.midy, ex, ey) : 1e9f;
+                    if (std::min(d1, d2) <= TH) { ok = true; break; }
+                }
+                if (ok) nodeLabels.push_back(NodeLabel{mx, my, pendingNodeLabel});
+                placingNodeLabel = false;
+            }
 
             // --- wire create / select-bend with left click ---
             if (guiEvent.type == SDL_MOUSEBUTTONDOWN && guiEvent.button.button == SDL_BUTTON_LEFT && !placementMode) {
@@ -3747,17 +3857,21 @@ int main(int argc, char* argv[]) {
                     if (selectedElement=="D") fill = SDL_MapRGB(s->format, 210,160,230);
                     if (selectedElement=="V") fill = SDL_MapRGB(s->format, 255,140,140);
                     if (selectedElement=="I") fill = SDL_MapRGB(s->format, 140,220,220);
+                    if (selectedElement=="VCVS") fill = SDL_MapRGB(s->format, 255,210,120);
+                    if (selectedElement=="VCCS") fill = SDL_MapRGB(s->format, 180,255,180);
+                    if (selectedElement=="CCVS") fill = SDL_MapRGB(s->format, 180,210,255);
+                    if (selectedElement=="CCCS") fill = SDL_MapRGB(s->format, 255,180,210);
                     if (selectedElement=="G") fill = SDL_MapRGB(s->format, 200,200,200);
 
                     int w = (selectedElement=="G") ? 40 : 120;
                     int h = 40;
 
                     // label like R-1K, ... ; for diode use pendingDiode ("D" or "Z")
-                    std::string nice = (selectedElement=="D")
-                                       ? string(pendingDiode)   // just "D" or "Z"
-                                       : makeLabel(selectedElement, value);
+                    string nice = (selectedElement=="D")
+                                  ? string(pendingDiode)   // just "D" or "Z"
+                                  : makeLabel(selectedElement, value);
 
-                    visuals.push_back(VisualElement{selectedElement, nice, placeX, placeY, w, h, fill});
+                    visuals.push_back(VisualElement{selectedElement, nice, placeX, placeY, w, h, fill, name});
                     placementMode = false;
                 } catch (const exception& e) { cerr << e.what() << endl; }
 
@@ -3797,10 +3911,10 @@ int main(int argc, char* argv[]) {
         if (activeMenu != -1) {
             int panelX = activeMenu * 200, panelY = 40;
             if (activeMenu == 0 && simMenu)       simMenu->render(panelX, panelY);
-            else if (activeMenu == 2 && nameMenu) nameMenu->render(panelX, panelY);
-            else if (activeMenu == 3 && fileMenu) fileMenu->render(panelX, panelY);
-            else if (activeMenu == 4 && libMenu)  libMenu->render(panelX, panelY);
-            else if (activeMenu == 5 && scopeMenu) scopeMenu->render(panelX, panelY);
+            else if (activeMenu == 2 && fileMenu) fileMenu->render(panelX, panelY);
+            else if (activeMenu == 3 && libMenu)  libMenu->render(panelX, panelY);
+            else if (activeMenu == 4 && scopeMenu) scopeMenu->render(panelX, panelY);
+            else if (activeMenu == 5 && nameMenu) nameMenu->render(panelX, panelY);
         }
 
         // Custom Node Library palette
@@ -3808,9 +3922,9 @@ int main(int argc, char* argv[]) {
             SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
 
             // simple panel with border
-            SDL_Rect border = {10, 50, 700, 370};
+            SDL_Rect border = {10, 50, 700, 460};
             SDL_FillRect(s, &border, SDL_MapRGB(s->format,  90,  90,  90));
-            SDL_Rect inner  = {11, 51, 698, 368};
+            SDL_Rect inner  = {11, 51, 698, 458};
             SDL_FillRect(s, &inner,  SDL_MapRGB(s->format, 245, 245, 245));
 
             SDL_Color titleClr = {0,0,0,255};
@@ -3823,7 +3937,9 @@ int main(int argc, char* argv[]) {
             nodePaletteRects.clear();
             const vector<pair<string, string>> items = {
                     {"R","Resistor"}, {"C","Capacitor"}, {"L","Inductor"}, {"D","Diode"},
-                    {"V","Voltage Source"}, {"I","Current Source"}, {"G","Ground"}
+                    {"V","Voltage Source"}, {"I","Current Source"},
+                    {"VCVS","VCVS"}, {"VCCS","VCCS"}, {"CCVS","CCVS"}, {"CCCS","CCCS"},
+                    {"G","Ground"}
             };
 
             int bx = 20, by = 100, bw = 210, bh = 70, gapX = 12, gapY = 12;
@@ -3840,6 +3956,10 @@ int main(int argc, char* argv[]) {
                 if (items[i].first=="D") fill = SDL_MapRGB(s->format, 210,160,230);
                 if (items[i].first=="V") fill = SDL_MapRGB(s->format, 255,140,140);
                 if (items[i].first=="I") fill = SDL_MapRGB(s->format, 140,220,220);
+                if (items[i].first=="VCVS") fill = SDL_MapRGB(s->format, 255,210,120);
+                if (items[i].first=="VCCS") fill = SDL_MapRGB(s->format, 180,255,180);
+                if (items[i].first=="CCVS") fill = SDL_MapRGB(s->format, 180,210,255);
+                if (items[i].first=="CCCS") fill = SDL_MapRGB(s->format, 255,180,210);
                 if (items[i].first=="G") fill = SDL_MapRGB(s->format, 200,200,200);
 
                 SDL_FillRect(s, &btn, SDL_MapRGB(s->format, 100,100,100)); // border
@@ -3856,7 +3976,7 @@ int main(int argc, char* argv[]) {
             }
             // draw small input box at bottom of the palette (only when open)
             if (valuePromptOpen) {
-                const int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 370;
+                const int PAL_X = 10, PAL_Y = 50, PAL_W = 700, PAL_H = 460;
 
                 valuePromptBox = { PAL_X + 20, PAL_Y + PAL_H - 60, PAL_W - 40, 36 };
                 SDL_Rect borderBox = { valuePromptBox.x-1, valuePromptBox.y-1,
@@ -4009,6 +4129,16 @@ int main(int argc, char* argv[]) {
         for (const auto& ve : visuals) drawComponent(visSurf, menuFont, ve);
         // === END DRAW VISUAL COMPONENTS ===
 
+        // draw node labels
+        for (const auto& lab : nodeLabels) {
+            SDL_Surface* ts = TTF_RenderText_Solid(menuFont, lab.text.c_str(), SDL_Color{0,0,0,255});
+            if (ts) {
+                SDL_Rect rp{ lab.x - ts->w/2, lab.y - ts->h/2, ts->w, ts->h };
+                SDL_BlitSurface(ts, NULL, visSurf, &rp);
+                SDL_FreeSurface(ts);
+            }
+        }
+
         // --- Draw Files panel (bottom-left) ---
         if (filesPanelVisible) {
             SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
@@ -4084,6 +4214,57 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // --- Draw Node Name panel ---
+        if (nodeNamePanelOpen) {
+            SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
+            // پس‌زمینه
+            SDL_FillRect(s, &nodeNamePanel, SDL_MapRGB(s->format, 250,250,250));
+            SDL_Rect border{ nodeNamePanel.x-1, nodeNamePanel.y-1, nodeNamePanel.w+2, nodeNamePanel.h+2 };
+            SDL_FillRect(s, &border, SDL_MapRGB(s->format, 80,80,80));
+
+            // عنوان
+            if (SDL_Surface* title = TTF_RenderText_Solid(menuFont, "Node Name", SDL_Color{0,0,0,255})) {
+                SDL_Rect tpos{ nodeNamePanel.x + 10, nodeNamePanel.y + 8, title->w, title->h };
+                SDL_BlitSurface(title, NULL, s, &tpos);
+                SDL_FreeSurface(title);
+            }
+
+            // باکس ورودی
+            nnInputRect = { nodeNamePanel.x + 10, nodeNamePanel.y + 40, nodeNamePanel.w - 20, 26 };
+            SDL_FillRect(s, &nnInputRect, SDL_MapRGB(s->format, 255,255,255));
+            SDL_Rect ibo{ nnInputRect.x-1, nnInputRect.y-1, nnInputRect.w+2, nnInputRect.h+2 };
+            SDL_FillRect(s, &ibo, SDL_MapRGB(s->format, 200,200,200));
+            if (!nnText.empty()) {
+                if (SDL_Surface* ts = TTF_RenderText_Solid(menuFont, nnText.c_str(), SDL_Color{0,0,0,255})) {
+                    SDL_Rect ip{ nnInputRect.x + 6, nnInputRect.y + 4, ts->w, ts->h };
+                    SDL_BlitSurface(ts, NULL, s, &ip);
+                    SDL_FreeSurface(ts);
+                }
+            }
+
+            // دکمه‌های + / - / Done
+            nnPlusRect  = { nodeNamePanel.x + 10, nodeNamePanel.y + 80, 30, 26 };
+            nnMinusRect = { nodeNamePanel.x + 50, nodeNamePanel.y + 80, 30, 26 };
+            nnDoneRect  = { nodeNamePanel.x + nodeNamePanel.w - 90, nodeNamePanel.y + 78, 80, 30 };
+
+            SDL_FillRect(s, &nnPlusRect,  SDL_MapRGB(s->format, 230,230,230));
+            SDL_FillRect(s, &nnMinusRect, SDL_MapRGB(s->format, 230,230,230));
+            SDL_FillRect(s, &nnDoneRect,  SDL_MapRGB(s->format, 0,120,220));
+
+            if (SDL_Surface* p = TTF_RenderText_Solid(menuFont, "+", SDL_Color{0,0,0,255})) {
+                SDL_Rect pp{ nnPlusRect.x + (nnPlusRect.w - p->w)/2, nnPlusRect.y + (nnPlusRect.h - p->h)/2, p->w, p->h };
+                SDL_BlitSurface(p, NULL, s, &pp); SDL_FreeSurface(p);
+            }
+            if (SDL_Surface* m = TTF_RenderText_Solid(menuFont, "-", SDL_Color{0,0,0,255})) {
+                SDL_Rect mp{ nnMinusRect.x + (nnMinusRect.w - m->w)/2, nnMinusRect.y + (nnMinusRect.h - m->h)/2, m->w, m->h };
+                SDL_BlitSurface(m, NULL, s, &mp); SDL_FreeSurface(m);
+            }
+            if (SDL_Surface* d = TTF_RenderText_Solid(menuFont, "Done", SDL_Color{255,255,255,255})) {
+                SDL_Rect dp{ nnDoneRect.x + (nnDoneRect.w - d->w)/2, nnDoneRect.y + (nnDoneRect.h - d->h)/2, d->w, d->h };
+                SDL_BlitSurface(d, NULL, s, &dp); SDL_FreeSurface(d);
+            }
+        }
+
         // 1-d) Draw inline DELETE button if visible
         if (ctxDeleteVisible) {
             SDL_Surface* surf = SDL_GetWindowSurface(guiWindow);
@@ -4096,6 +4277,23 @@ int main(int argc, char* argv[]) {
                          ctxDeleteRect.y + (ctxDeleteRect.h - t->h)/2,
                          t->w, t->h };
             SDL_BlitSurface(t, NULL, surf, &tp);
+            SDL_FreeSurface(t);
+        }
+
+        // (C) Draw the small red 'Delete' popup (on top of everything)
+        if (ctxDeleteVisible) {
+            SDL_Surface* s = SDL_GetWindowSurface(guiWindow);
+            SDL_Rect border = { ctxDeleteRect.x - 1, ctxDeleteRect.y - 1,
+                                ctxDeleteRect.w + 2, ctxDeleteRect.h + 2 };
+            SDL_FillRect(s, &border, SDL_MapRGB(s->format, 0, 0, 0));
+            SDL_FillRect(s, &ctxDeleteRect, SDL_MapRGB(s->format, 220, 40, 40));
+
+            SDL_Color white{255,255,255,255};
+            SDL_Surface* t = TTF_RenderText_Solid(menuFont, "Delete", white);
+            SDL_Rect tp = { ctxDeleteRect.x + (ctxDeleteRect.w - t->w)/2,
+                            ctxDeleteRect.y + (ctxDeleteRect.h - t->h)/2,
+                            t->w, t->h };
+            SDL_BlitSurface(t, NULL, s, &tp);
             SDL_FreeSurface(t);
         }
 
@@ -4135,11 +4333,10 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-
 // Implementation of solveACSweep outside Circuit class
-void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
-                           double startFreq, double stopFreq, int numPoints,
-                           const std::string& sweepType, const std::vector<std::string>& vars) {
+void Circuit::solveACSweep( ofstream& out, const string& sourceName,
+                            double startFreq, double stopFreq, int numPoints,
+                            const string& sweepType, const vector<string>& vars) {
     // Find the AC voltage source
     CircuitElement* src = findElement(sourceName);
     if (!src || src->type != VSOURCE) {
@@ -4150,13 +4347,13 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
     double originalVoltage = vsrc->voltage; // amplitude stored here
 
     // Get DC operating point to linearize diodes (small-signal conductance)
-    std::vector<double> dcVolt;
+    vector<double> dcVolt;
     if (!solveDC(dcVolt, out)) {
         out << "Warning: DC operating point failed - AC linearization for diodes may be incorrect\n";
     }
 
     struct FrozenDiode { int i1, i2; double Gd; };
-    std::vector<FrozenDiode> frozenDiodes;
+    vector<FrozenDiode> frozenDiodes;
     for (auto e : elements) {
         if (e->type != DIODE) continue;
         auto d = static_cast<Diode*>(e);
@@ -4172,13 +4369,13 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
     }
 
     // Build frequency vector (Hz)
-    std::vector<double> freqs;
+    vector<double> freqs;
     if (numPoints <= 1) {
         freqs.push_back(startFreq);
     } else {
-        std::string st = sweepType;
+        string st = sweepType;
         // lower-case
-        for (auto &c : st) c = std::tolower(c);
+        for (auto &c : st) c =tolower(c);
         if (st == "decade" || st == "log" || st == "octave") {
             double f1 = startFreq, f2 = stopFreq;
             if (f1 <= 0.0 || f2 <= 0.0) {
@@ -4194,7 +4391,7 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
         } else {
             // linear
             for (int k = 0; k < numPoints; ++k) {
-                double val = startFreq + (stopFreq - startFreq) * double(k) / double(std::max(1, numPoints - 1));
+                double val = startFreq + (stopFreq - startFreq) * double(k) / double( max(1, numPoints - 1));
                 freqs.push_back(val);
             }
         }
@@ -4209,7 +4406,7 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
 
     int N = nodeCount; // number of non-zero nodes
     // map voltage sources to branch indices
-    std::map<CircuitElement*,int> vsBranch;
+    map<CircuitElement*,int> vsBranch;
     int numVS = 0;
     for (auto e : elements) {
         if (e->type == VSOURCE) vsBranch[e] = numVS++;
@@ -4218,16 +4415,16 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
     int dim = N + M;
 
     // branchElements by index
-    std::vector<CircuitElement*> branchElements(M, nullptr);
+    vector<CircuitElement*> branchElements(M, nullptr);
     for (auto &kv : vsBranch) branchElements[kv.second] = kv.first;
 
     // For each frequency assemble complex MNA
     for (double f : freqs) {
         double omega = 2.0 * M_PI * f;
-        std::complex<double> j(0.0, 1.0);
+        complex<double> j(0.0, 1.0);
 
-        std::vector<std::vector<std::complex<double>>> A(dim, std::vector<std::complex<double>>(dim, std::complex<double>(0.0,0.0)));
-        std::vector<std::complex<double>> b(dim, std::complex<double>(0.0,0.0));
+        vector< vector< complex<double>>> A(dim,vector< complex<double>>(dim,complex<double>(0.0,0.0)));
+        vector< complex<double>> b(dim,complex<double>(0.0,0.0));
 
         auto idxN = [&](int node)->int { return (node==0 ? -1 : nodeIndex[node]); };
 
@@ -4238,7 +4435,7 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
             switch (e->type) {
                 case RESISTOR: {
                     double G = 1.0 / static_cast<Resistor*>(e)->resistance;
-                    std::complex<double> Y(G, 0.0);
+                    complex<double> Y(G, 0.0);
                     if (i1>=0) A[i1][i1] += Y;
                     if (i2>=0) A[i2][i2] += Y;
                     if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
@@ -4246,7 +4443,7 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
                 }
                 case CAPACITOR: {
                     double C = static_cast<Capacitor*>(e)->capacitance;
-                    std::complex<double> Y = j * omega * C; // jωC
+                    complex<double> Y = j * omega * C; // jωC
                     if (i1>=0) A[i1][i1] += Y;
                     if (i2>=0) A[i2][i2] += Y;
                     if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
@@ -4255,12 +4452,12 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
                 case INDUCTOR: {
                     double L = static_cast<Inductor*>(e)->inductance;
                     if (omega == 0.0) {
-                        std::complex<double> Y(1e12, 0.0);
+                        complex<double> Y(1e12, 0.0);
                         if (i1>=0) A[i1][i1] += Y;
                         if (i2>=0) A[i2][i2] += Y;
                         if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
                     } else {
-                        std::complex<double> Y = 1.0 / (j * omega * L);
+                        complex<double> Y = 1.0 / (j * omega * L);
                         if (i1>=0) A[i1][i1] += Y;
                         if (i2>=0) A[i2][i2] += Y;
                         if (i1>=0 && i2>=0) { A[i1][i2] -= Y; A[i2][i1] -= Y; }
@@ -4273,17 +4470,17 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
                 }
                 case VSOURCE: {
                     int idxB = vsBranch[e];
-                    if (i1>=0) { A[i1][N + idxB] += std::complex<double>(1.0,0.0); A[N + idxB][i1] += std::complex<double>(1.0,0.0); }
-                    if (i2>=0) { A[i2][N + idxB] += std::complex<double>(-1.0,0.0); A[N + idxB][i2] += std::complex<double>(-1.0,0.0); }
+                    if (i1>=0) { A[i1][N + idxB] +=complex<double>(1.0,0.0); A[N + idxB][i1] +=complex<double>(1.0,0.0); }
+                    if (i2>=0) { A[i2][N + idxB] +=complex<double>(-1.0,0.0); A[N + idxB][i2] +=complex<double>(-1.0,0.0); }
                     // Put source phasor (assume 0° phase) in RHS
-                    b[N + idxB] = std::complex<double>(vsrc->voltage, 0.0);
+                    b[N + idxB] =complex<double>(vsrc->voltage, 0.0);
                     break;
                 }
                 case GROUND: {
                     if (i1 >= 0) {
-                        for (int k = 0; k < dim; ++k) { A[i1][k] = std::complex<double>(0.0,0.0); A[k][i1] = std::complex<double>(0.0,0.0); }
-                        A[i1][i1] = std::complex<double>(1.0,0.0);
-                        b[i1] = std::complex<double>(0.0,0.0);
+                        for (int k = 0; k < dim; ++k) { A[i1][k] =complex<double>(0.0,0.0); A[k][i1] =complex<double>(0.0,0.0); }
+                        A[i1][i1] =complex<double>(1.0,0.0);
+                        b[i1] =complex<double>(0.0,0.0);
                     }
                     break;
                 }
@@ -4295,14 +4492,14 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
         // Stamp frozen diode conductances
         for (auto &fd : frozenDiodes) {
             int i1 = fd.i1, i2 = fd.i2;
-            std::complex<double> Gd(fd.Gd, 0.0);
+            complex<double> Gd(fd.Gd, 0.0);
             if (i1>=0) A[i1][i1] += Gd;
             if (i2>=0) A[i2][i2] += Gd;
             if (i1>=0 && i2>=0) { A[i1][i2] -= Gd; A[i2][i1] -= Gd; }
         }
 
         // Solve
-        std::vector<std::complex<double>> x(dim, std::complex<double>(0.0,0.0));
+        vector< complex<double>> x(dim,complex<double>(0.0,0.0));
         if (!GaussianComplexSolver::solve(A, b, x)) {
             out << "Warning: AC solve singular at f=" << f << "\n";
             out << f;
@@ -4315,7 +4512,7 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
         out << f;
         for (const auto& var : vars) {
             if (var.size() >= 3 && var[0] == 'V') {
-                std::string nodeName = var.substr(2, var.size()-3);
+                string nodeName = var.substr(2, var.size()-3);
                 if (nameToNode.find(nodeName) == nameToNode.end()) {
                     out << "\t0\t0";
                 } else {
@@ -4326,14 +4523,14 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
                         else out << "\t0\t0";
                     } else {
                         int idx = nodeIndex[nodeNum];
-                        std::complex<double> Vc = x[idx];
-                        double mag = std::abs(Vc);
-                        double phase = std::arg(Vc) * 180.0 / M_PI;
+                        complex<double> Vc = x[idx];
+                        double mag =abs(Vc);
+                        double phase =arg(Vc) * 180.0 / M_PI;
                         out << "\t" << mag << "\t" << phase;
                     }
                 }
             } else if (var.size() >= 3 && var[0] == 'I') {
-                std::string compName = var.substr(2, var.size()-3);
+                string compName = var.substr(2, var.size()-3);
                 CircuitElement* elem = findElement(compName);
                 if (!elem) {
                     out << "\t0\t0";
@@ -4341,30 +4538,30 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
                     auto r = static_cast<Resistor*>(elem);
                     int i1 = (r->node1==0 ? -1 : nodeIndex[r->node1]);
                     int i2 = (r->node2==0 ? -1 : nodeIndex[r->node2]);
-                    std::complex<double> V1 = (i1>=0 ? x[i1] : std::complex<double>(0.0,0.0));
-                    std::complex<double> V2 = (i2>=0 ? x[i2] : std::complex<double>(0.0,0.0));
-                    std::complex<double> I = (V1 - V2) / r->resistance;
-                    double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                    complex<double> V1 = (i1>=0 ? x[i1] :complex<double>(0.0,0.0));
+                    complex<double> V2 = (i2>=0 ? x[i2] :complex<double>(0.0,0.0));
+                    complex<double> I = (V1 - V2) / r->resistance;
+                    double mag =abs(I); double phase =arg(I) * 180.0 / M_PI;
                     out << "\t" << mag << "\t" << phase;
                 } else if (elem->type == CAPACITOR) {
                     auto c = static_cast<Capacitor*>(elem);
                     int i1 = (c->node1==0 ? -1 : nodeIndex[c->node1]);
                     int i2 = (c->node2==0 ? -1 : nodeIndex[c->node2]);
-                    std::complex<double> V1 = (i1>=0 ? x[i1] : std::complex<double>(0.0,0.0));
-                    std::complex<double> V2 = (i2>=0 ? x[i2] : std::complex<double>(0.0,0.0));
-                    std::complex<double> I = std::complex<double>(0.0,1.0) * omega * c->capacitance * (V1 - V2);
-                    double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                    complex<double> V1 = (i1>=0 ? x[i1] :complex<double>(0.0,0.0));
+                    complex<double> V2 = (i2>=0 ? x[i2] :complex<double>(0.0,0.0));
+                    complex<double> I =complex<double>(0.0,1.0) * omega * c->capacitance * (V1 - V2);
+                    double mag =abs(I); double phase =arg(I) * 180.0 / M_PI;
                     out << "\t" << mag << "\t" << phase;
                 } else if (elem->type == INDUCTOR) {
                     auto l = static_cast<Inductor*>(elem);
                     int i1 = (l->node1==0 ? -1 : nodeIndex[l->node1]);
                     int i2 = (l->node2==0 ? -1 : nodeIndex[l->node2]);
-                    std::complex<double> V1 = (i1>=0 ? x[i1] : std::complex<double>(0.0,0.0));
-                    std::complex<double> V2 = (i2>=0 ? x[i2] : std::complex<double>(0.0,0.0));
-                    std::complex<double> I;
-                    if (omega == 0.0) I = std::complex<double>(0.0,0.0);
-                    else I = (V1 - V2) / (std::complex<double>(0.0,1.0) * omega * l->inductance);
-                    double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                    complex<double> V1 = (i1>=0 ? x[i1] :complex<double>(0.0,0.0));
+                    complex<double> V2 = (i2>=0 ? x[i2] :complex<double>(0.0,0.0));
+                    complex<double> I;
+                    if (omega == 0.0) I =complex<double>(0.0,0.0);
+                    else I = (V1 - V2) / ( complex<double>(0.0,1.0) * omega * l->inductance);
+                    double mag =abs(I); double phase =arg(I) * 180.0 / M_PI;
                     out << "\t" << mag << "\t" << phase;
                 } else if (elem->type == VSOURCE) {
                     // find branch index
@@ -4374,8 +4571,8 @@ void Circuit::solveACSweep(std::ofstream& out, const std::string& sourceName,
                     }
                     if (found == -1) out << "\t0\t0";
                     else {
-                        std::complex<double> I = x[N + found];
-                        double mag = std::abs(I); double phase = std::arg(I) * 180.0 / M_PI;
+                        complex<double> I = x[N + found];
+                        double mag =abs(I); double phase =arg(I) * 180.0 / M_PI;
                         out << "\t" << mag << "\t" << phase;
                     }
                 } else {
