@@ -73,7 +73,7 @@ public:
     NameException() : msg("Error: Element not found in library") {}
 
     const char* what() const noexcept override {
-            return msg.c_str();
+        return msg.c_str();
     }
 };
 
@@ -83,28 +83,28 @@ private:
 public:
     ValueException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-            if (elementType == "resistor") {
-                return "Error: Resistance cannot be zero or negative";
-            } else if (elementType == "capacitor") {
-                return "Error: Capacitance cannot be zero or negative";
-            } else if (elementType == "inductor") {
-                return "Error: Inductance cannot be zero or negative";
-            }
-            return "Error: Invalid value";
+        if (elementType == "resistor") {
+            return "Error: Resistance cannot be zero or negative";
+        } else if (elementType == "capacitor") {
+            return "Error: Capacitance cannot be zero or negative";
+        } else if (elementType == "inductor") {
+            return "Error: Inductance cannot be zero or negative";
+        }
+        return "Error: Invalid value";
     }
 };
 
 class SyntaxException : public exception {
 public:
     const char* what() const noexcept override {
-            return "Error: Syntax error";
+        return "Error: Syntax error";
     }
 };
 
 class ModelException : public exception {
 public:
     const char* what() const noexcept override {
-            return "Error: Model not found in library";
+        return "Error: Model not found in library";
     }
 };
 
@@ -115,9 +115,9 @@ private:
 public:
     DuplicateException(const string& type, const string& nm) : elementType(type), name(nm) {}
     const char* what() const noexcept override {
-            static string msg;
-            msg = "Error: " + elementType + " " + name + " already exists in the circuit";
-            return msg.c_str();
+        static string msg;
+        msg = "Error: " + elementType + " " + name + " already exists in the circuit";
+        return msg.c_str();
     }
 };
 
@@ -127,9 +127,9 @@ private:
 public:
     NotFoundException(const string& type) : elementType(type) {}
     const char* what() const noexcept override {
-            static string msg;
-            msg = "Error: Cannot delete " + elementType + "; component not found";
-            return msg.c_str();
+        static string msg;
+        msg = "Error: Cannot delete " + elementType + "; component not found";
+        return msg.c_str();
     }
 };
 
@@ -326,6 +326,156 @@ public:
         return true;
     }
 };
+//-----------------------------------------------------------------------------
+//   Signal class for handling large signal data in chunks
+//-----------------------------------------------------------------------------
+class Signal {
+private:
+    string fileLocation;
+    ifstream file;
+    int chunkSize;
+    vector<double> currentChunk;
+    int columnIndex;
+    streampos dataStartPos;
+
+public:
+    Signal(const string& filename, const string& signalName)
+            : fileLocation(filename), chunkSize(1000), columnIndex(-1) {
+        file.open(fileLocation);
+        if (!file.is_open()) {
+            throw runtime_error("Cannot open signal file: " + fileLocation);
+        }
+
+        // Read header to find column index
+        string header;
+        getline(file, header);
+        vector<string> columns;
+        stringstream ss(header);
+        string column;
+        while (getline(ss, column, '\t')) {
+            columns.push_back(column);
+        }
+
+        for (size_t i = 0; i < columns.size(); i++) {
+            if (columns[i] == signalName) {
+                columnIndex = i;
+                break;
+            }
+        }
+
+        if (columnIndex == -1) {
+            throw runtime_error("Signal not found in file: " + signalName);
+        }
+
+        dataStartPos = file.tellg();
+    }
+
+    vector<double> readNextChunk() {
+        vector<double> chunk;
+        string line;
+        for (int i = 0; i < chunkSize && getline(file, line); i++) {
+            vector<string> values;
+            stringstream ss(line);
+            string value;
+            while (getline(ss, value, '\t')) {
+                values.push_back(value);
+            }
+            if (values.size() > columnIndex) {
+                chunk.push_back(stod(values[columnIndex]));
+            }
+        }
+        return chunk;
+    }
+
+    void reset() {
+        file.clear();
+        file.seekg(dataStartPos);
+    }
+
+    ~Signal() {
+        if (file.is_open()) {
+            file.close();
+        }
+    }
+    static Signal add(const Signal& s1, const Signal& s2, const string& outputFilename) {
+        ifstream file1(s1.fileLocation);
+        ifstream file2(s2.fileLocation);
+        ofstream out(outputFilename);
+
+        if (!file1.is_open() || !file2.is_open() || !out.is_open()) {
+            throw runtime_error("Cannot open files for signal addition");
+        }
+
+        // Read and combine headers
+        string header1, header2;
+        getline(file1, header1);
+        getline(file2, header2);
+        out << "Time\t" << header1.substr(header1.find('\t') + 1) << "+"
+            << header2.substr(header2.find('\t') + 1) << "\n";
+
+        // Process data
+        string line1, line2;
+        while (getline(file1, line1) && getline(file2, line2)) {
+            vector<string> values1 = split(line1, '\t');
+            vector<string> values2 = split(line2, '\t');
+
+            if (values1.size() < 2 || values2.size() < 2) continue;
+
+            double time = stod(values1[0]);
+            double value1 = stod(values1[1]);
+            double value2 = stod(values2[1]);
+
+            out << time << "\t" << (value1 + value2) << "\n";
+        }
+
+        return Signal(outputFilename, "Result");
+    }
+
+    static Signal subtract(const Signal& s1, const Signal& s2, const string& outputFilename) {
+        ifstream file1(s1.fileLocation);
+        ifstream file2(s2.fileLocation);
+        ofstream out(outputFilename);
+
+        if (!file1.is_open() || !file2.is_open() || !out.is_open()) {
+            throw runtime_error("Cannot open files for signal subtraction");
+        }
+
+        // Read and combine headers
+        string header1, header2;
+        getline(file1, header1);
+        getline(file2, header2);
+        out << "Time\t" << header1.substr(header1.find('\t') + 1) << "-"
+            << header2.substr(header2.find('\t') + 1) << "\n";
+
+        // Process data
+        string line1, line2;
+        while (getline(file1, line1) && getline(file2, line2)) {
+            vector<string> values1 = split(line1, '\t');
+            vector<string> values2 = split(line2, '\t');
+
+            if (values1.size() < 2 || values2.size() < 2) continue;
+
+            double time = stod(values1[0]);
+            double value1 = stod(values1[1]);
+            double value2 = stod(values2[1]);
+
+            out << time << "\t" << (value1 - value2) << "\n";
+        }
+
+        return Signal(outputFilename, "Result");
+    }
+
+private:
+    static vector<string> split(const string& s, char delimiter) {
+        vector<string> tokens;
+        string token;
+        istringstream tokenStream(s);
+        while (getline(tokenStream, token, delimiter)) {
+            tokens.push_back(token);
+        }
+        return tokens;
+    }
+};
 
 //-----------------------------------------------------------------------------
 //   The main Circuit class: holds all elements, builds MNA matrices, does DC and transient solves.
@@ -339,6 +489,7 @@ private:
     map<int, string> nodeNames;  // Map node numbers to names
     map<string, int> nameToNode;
     int nextNodeIndex = 1;  // Start from 1 (0 is typically ground)
+    string lastSignalFile;
 
 public:
     //SDL2
@@ -656,6 +807,25 @@ public:
                 out << "  No element named '" << filter << "' found.\n";
             }
         }
+    }
+    void writeTransientData(const string& filename, const vector<string>& vars) {
+        ofstream dataFile(filename);
+        if (!dataFile.is_open()) {
+            throw runtime_error("Cannot open data file for writing");
+        }
+
+        // Write header
+        dataFile << "Time";
+        for (const auto& var : vars) {
+            dataFile << "\t" << var;
+        }
+        dataFile << "\n";
+
+        // Simulate transient and write data
+        simulateTransient(tstop, tstep, BACKWARD_EULER, dataFile, vars);
+
+        // Store the filename for later use
+        setLastSignalFile(filename);
     }
 
     //----------------------------------------------------------------------------------------
@@ -1282,6 +1452,16 @@ public:
         nodeNames[0] = "GND";
         nameToNode["GND"] = 0;
     }
+
+    string getLastSignalFile() const {
+        return lastSignalFile;
+    }
+
+    void setLastSignalFile(const string& filename) {
+        lastSignalFile = filename;
+    }
+
+
 };
 
 // graphical visualization of electric signal
@@ -1295,9 +1475,13 @@ private:
     vector<SDL_Color> signalColors;
     double tStart, tStop, tStep;
     string currentSignal;
+    double vScale;
+    double hScale;
+    bool autoZoom;
 
 public:
-    SignalVisualizer() : window(nullptr), renderer(nullptr), font(nullptr), tStart(0), tStop(0), tStep(0) {}
+    SignalVisualizer() : window(nullptr), renderer(nullptr), font(nullptr),
+                         tStart(0), tStop(0), tStep(0), vScale(1.0), hScale(1.0), autoZoom(false) {}
 
     bool initialize() {
         if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -1384,6 +1568,10 @@ public:
         SDL_RenderPresent(renderer);
     }
 
+    void setVScale(double scale) { vScale = scale; }
+    void setHScale(double scale) { hScale = scale; }
+    void setAutoZoom(bool enable) { autoZoom = enable; }
+
     void drawGrid() {
         SDL_SetRenderDrawColor(renderer, 220, 220, 220, 255);
 
@@ -1397,6 +1585,8 @@ public:
             int xPos = gridX + (x * gridWidth / 10);
             SDL_RenderDrawLine(renderer, xPos, gridY, xPos, gridY + gridHeight);
         }
+
+
 
         // Draw horizontal lines (voltage grid)
         for (int y = 0; y <= 10; y++) {
@@ -1436,6 +1626,22 @@ public:
             }
         }
 
+        string vScaleText = "V Scale: " + to_string(vScale).substr(0, 4);
+        string hScaleText = "H Scale: " + to_string(hScale).substr(0, 4);
+
+        SDL_Surface* vScaleSurface = TTF_RenderText_Solid(font, vScaleText.c_str(), textColor);
+        SDL_Surface* hScaleSurface = TTF_RenderText_Solid(font, hScaleText.c_str(), textColor);
+
+        SDL_Rect vScaleRect = {gridX + gridWidth + 10, gridY + 10, vScaleSurface->w, vScaleSurface->h};
+        SDL_Rect hScaleRect = {gridX + gridWidth + 10, gridY + 30, hScaleSurface->w, hScaleSurface->h};
+
+        SDL_BlitSurface(vScaleSurface, NULL, SDL_GetWindowSurface(window), &vScaleRect);
+        SDL_BlitSurface(hScaleSurface, NULL, SDL_GetWindowSurface(window), &hScaleRect);
+
+        SDL_FreeSurface(vScaleSurface);
+        SDL_FreeSurface(hScaleSurface);
+
+
         // Add some padding
         minVoltage -= 0.1 * fabs(minVoltage);
         maxVoltage += 0.1 * fabs(maxVoltage);
@@ -1465,6 +1671,10 @@ public:
         SDL_RenderCopy(renderer, voltageTexture, NULL, &voltageRect);
         SDL_FreeSurface(voltageTitle);
         SDL_DestroyTexture(voltageTexture);
+
+
+
+
     }
 
     void drawSignal(const vector<double>& signal, const SDL_Color& color, const string& name) {
@@ -1486,21 +1696,35 @@ public:
             }
         }
 
-        // Add some padding
-        minVoltage -= 0.1 * fabs(minVoltage);
-        maxVoltage += 0.1 * fabs(maxVoltage);
+        // Apply auto zoom if enabled
+        if (autoZoom) {
+            // Add some padding
+            minVoltage -= 0.1 * fabs(minVoltage);
+            maxVoltage += 0.1 * fabs(maxVoltage);
+        } else {
+            // Apply manual scaling
+            double range = maxVoltage - minVoltage;
+            double center = (maxVoltage + minVoltage) / 2;
+            minVoltage = center - (range / 2) * vScale;
+            maxVoltage = center + (range / 2) * vScale;
+        }
 
         SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
 
+        // Apply horizontal scaling
+        double scaledTimeStep = tStep * hScale;
+        double scaledTStart = tStart;
+        double scaledTStop = tStart + (tStop - tStart) * hScale;
+
         // Draw the signal using linear interpolation
         for (size_t i = 1; i < signal.size(); i++) {
-            double time1 = tStart + (i - 1) * tStep;
-            double time2 = tStart + i * tStep;
+            double time1 = scaledTStart + (i - 1) * scaledTimeStep;
+            double time2 = scaledTStart + i * scaledTimeStep;
             double voltage1 = signal[i - 1];
             double voltage2 = signal[i];
 
-            int x1 = gridX + static_cast<int>((time1 - tStart) / (tStop - tStart) * gridWidth);
-            int x2 = gridX + static_cast<int>((time2 - tStart) / (tStop - tStart) * gridWidth);
+            int x1 = gridX + static_cast<int>((time1 - scaledTStart) / (scaledTStop - scaledTStart) * gridWidth);
+            int x2 = gridX + static_cast<int>((time2 - scaledTStart) / (scaledTStop - scaledTStart) * gridWidth);
 
             int y1 = gridY + gridHeight - static_cast<int>((voltage1 - minVoltage) / (maxVoltage - minVoltage) * gridHeight);
             int y2 = gridY + gridHeight - static_cast<int>((voltage2 - minVoltage) / (maxVoltage - minVoltage) * gridHeight);
@@ -1545,8 +1769,34 @@ public:
                     running = false;
                 }
                 else if (event.type == SDL_KEYDOWN) {
-                    if (event.key.keysym.sym == SDLK_ESCAPE) {
-                        running = false;
+                    switch (event.key.keysym.sym) {
+                        case SDLK_ESCAPE:
+                            running = false;
+                            break;
+                        case SDLK_a: // Auto zoom
+                            autoZoom = !autoZoom;
+                            break;
+                        case SDLK_UP: // Zoom in vertically
+                            vScale *= 0.8;
+                            autoZoom = false;
+                            break;
+                        case SDLK_DOWN: // Zoom out vertically
+                            vScale *= 1.2;
+                            autoZoom = false;
+                            break;
+                        case SDLK_LEFT: // Zoom in horizontally
+                            hScale *= 0.8;
+                            autoZoom = false;
+                            break;
+                        case SDLK_RIGHT: // Zoom out horizontally
+                            hScale *= 1.2;
+                            autoZoom = false;
+                            break;
+                        case SDLK_r: // Reset scaling
+                            vScale = 1.0;
+                            hScale = 1.0;
+                            autoZoom = false;
+                            break;
                     }
                 }
             }
@@ -2240,6 +2490,14 @@ int main(int argc, char* argv[]) {
         else if (tok[0] == "list") {
             circuit.listElements(fout);
         }
+        else if (tok[0] == ".write" && tok.size() == 3 && tok[1] == "transient") {
+            try {
+                circuit.writeTransientData(tok[2], {"V(1)", "V(2)"}); // Example variables
+                fout << "Transient data written to " << tok[2] << "\n";
+            } catch (const exception& e) {
+                fout << "Error: " << e.what() << "\n";
+            }
+        }
         else if (tok[0] == "solve" && tok.size() == 2 && tok[1] == "dc") {
             vector<double> dcVolt;
             if (circuit.solveDC(dcVolt, fout)) {
@@ -2265,6 +2523,28 @@ int main(int argc, char* argv[]) {
             // We ignore tstart; we always begin at t=0
             circuit.simulateTransient(tstop, tstep, BACKWARD_EULER, fout, {});
         }
+
+        else if (tok[0] == ".add" && tok.size() == 4) {
+            try {
+                Signal s1(tok[1], "V(1)"); // Adjust signal name as needed
+                Signal s2(tok[2], "V(1)"); // Adjust signal name as needed
+                Signal result = Signal::add(s1, s2, tok[3]);
+                fout << "Signals added successfully. Result saved to " << tok[3] << "\n";
+            } catch (const exception& e) {
+                fout << "Error adding signals: " << e.what() << "\n";
+            }
+        }
+        else if (tok[0] == ".subtract" && tok.size() == 4) {
+            try {
+                Signal s1(tok[1], "V(1)"); // Adjust signal name as needed
+                Signal s2(tok[2], "V(1)"); // Adjust signal name as needed
+                Signal result = Signal::subtract(s1, s2, tok[3]);
+                fout << "Signals subtracted successfully. Result saved to " << tok[3] << "\n";
+            } catch (const exception& e) {
+                fout << "Error subtracting signals: " << e.what() << "\n";
+            }
+        }
+
         else {
             fout << "Error: Syntax error1\n";
         }
